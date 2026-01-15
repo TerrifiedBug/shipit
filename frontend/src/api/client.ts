@@ -1,5 +1,102 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// Auth types and functions
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  is_admin: number;
+}
+
+export async function getCurrentUser(): Promise<User | null> {
+  try {
+    const response = await fetch(`${API_BASE}/api/auth/me`, {
+      credentials: 'include',
+    });
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function login(email: string, password: string): Promise<User> {
+  const response = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, password }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Login failed');
+  }
+  const data = await response.json();
+  return data.user;
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE}/api/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+}
+
+export async function setup(email: string, password: string, name: string): Promise<User> {
+  const response = await fetch(`${API_BASE}/api/auth/setup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, password, name }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Setup failed');
+  }
+  return response.json();
+}
+
+// API Keys types and functions
+export interface ApiKey {
+  id: string;
+  name: string;
+  expires_at: string;
+  created_at: string;
+  last_used: string | null;
+}
+
+export interface CreateKeyResponse extends ApiKey {
+  key: string;
+}
+
+export async function listApiKeys(): Promise<ApiKey[]> {
+  const response = await fetch(`${API_BASE}/api/keys`, {
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error('Failed to list API keys');
+  return response.json();
+}
+
+export async function createApiKey(name: string, expiresInDays: number): Promise<CreateKeyResponse> {
+  const response = await fetch(`${API_BASE}/api/keys`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ name, expires_in_days: expiresInDays }),
+  });
+  if (!response.ok) throw new Error('Failed to create API key');
+  return response.json();
+}
+
+export async function deleteApiKey(keyId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/keys/${keyId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error('Failed to delete API key');
+}
+
+// Upload types and functions
 export interface FieldInfo {
   name: string;
   type: string;
