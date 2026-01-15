@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.routers import auth, health, history, keys, upload
+from app.routers import auth, health, history, indexes, keys, upload
 from app.routers.auth import get_current_user
 from app.services.database import init_db
 
@@ -69,6 +69,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(health.router, prefix="/api")
+app.include_router(indexes.router, prefix="/api")
 app.include_router(keys.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(history.router, prefix="/api")

@@ -189,3 +189,14 @@ export async function cancelIngest(uploadId: string, deleteIndex: boolean): Prom
     throw new Error(error.detail || 'Failed to cancel ingestion');
   }
 }
+
+export async function deleteIndex(indexName: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/indexes/${indexName}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete index');
+  }
+}
