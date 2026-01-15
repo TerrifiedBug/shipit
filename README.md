@@ -96,7 +96,30 @@ Supported formats:
 
 Planned features for future releases:
 
+### Authentication
+- LDAP/AD integration, OIDC/SAML SSO, or local users
+- User identity in upload history for audit trails
+- Role-based access (viewer vs uploader)
+
+### Custom Parsers - Regex/Grok
+- Ingest unstructured log files (plain text)
+- Define regex with named capture groups or select grok patterns
+- New "Parser" step between Upload and Preview
+
+### Field Type Coercion
+- CSV columns are always strings; convert to numbers, booleans, dates
+- Per-field type dropdown in Configure step
+- Custom date format specification
+
 ### Additional File Parsers
 - **Syslog**: RFC 3164 and RFC 5424 syslog message formats
 - **TSV**: Tab-separated values
 - **LTSV**: Labeled Tab-separated Values (common in web server logs)
+
+### Multi-File Upload
+- Ingest multiple related files into the same index
+- Accept multiple files in upload step, concatenate during ingestion
+
+### API Access
+- Programmatic uploads from scripts or CI/CD pipelines
+- REST API with token-based auth
