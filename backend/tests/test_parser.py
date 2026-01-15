@@ -1,3 +1,6 @@
+import tempfile
+from pathlib import Path
+
 import pytest
 
 from app.services.parser import detect_format, infer_fields, parse_preview
@@ -129,3 +132,82 @@ class TestInferFields:
         fields = infer_fields(records)
         assert len(fields) == 2
         assert [f["name"] for f in fields] == ["a", "b"]
+
+
+class TestTsvParser:
+    def test_parse_tsv(self):
+        """Test TSV parsing."""
+        content = "name\tage\tcity\nAlice\t30\tNYC\nBob\t25\tLA"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.tsv', delete=False) as f:
+            f.write(content)
+            f.flush()
+            records = parse_preview(Path(f.name), "tsv", limit=10)
+            assert len(records) == 2
+            assert records[0] == {"name": "Alice", "age": "30", "city": "NYC"}
+
+    def test_detect_tsv_by_extension(self):
+        """Test TSV detection by file extension."""
+        content = "name\tage\nAlice\t30"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.tsv', delete=False) as f:
+            f.write(content)
+            f.flush()
+            assert detect_format(Path(f.name)) == "tsv"
+
+
+class TestLtsvParser:
+    def test_parse_ltsv(self):
+        """Test LTSV parsing."""
+        content = "host:192.168.1.1\tmethod:GET\tpath:/api/health\nhost:192.168.1.2\tmethod:POST\tpath:/api/upload"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ltsv', delete=False) as f:
+            f.write(content)
+            f.flush()
+            records = parse_preview(Path(f.name), "ltsv", limit=10)
+            assert len(records) == 2
+            assert records[0] == {"host": "192.168.1.1", "method": "GET", "path": "/api/health"}
+
+    def test_detect_ltsv_by_extension(self):
+        """Test LTSV detection by file extension."""
+        content = "host:192.168.1.1\tmethod:GET"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ltsv', delete=False) as f:
+            f.write(content)
+            f.flush()
+            assert detect_format(Path(f.name)) == "ltsv"
+
+
+class TestSyslogParser:
+    def test_parse_syslog_rfc3164(self):
+        """Test syslog RFC 3164 parsing."""
+        content = "<34>Oct 11 22:14:15 mymachine su: 'su root' failed for user on /dev/pts/8"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+            f.write(content)
+            f.flush()
+            records = parse_preview(Path(f.name), "syslog", limit=10)
+            assert len(records) == 1
+            assert records[0]["priority"] == "34"
+            assert records[0]["hostname"] == "mymachine"
+
+    def test_detect_syslog_by_content(self):
+        """Test syslog detection by content pattern."""
+        content = "<34>Oct 11 22:14:15 mymachine su: test message"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+            f.write(content)
+            f.flush()
+            assert detect_format(Path(f.name)) == "syslog"
+
+    def test_log_file_not_syslog(self):
+        """Test .log file that is not syslog defaults to csv."""
+        content = "name,age\nAlice,30"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+            f.write(content)
+            f.flush()
+            assert detect_format(Path(f.name)) == "csv"
+
+    def test_syslog_fallback(self):
+        """Test syslog parser fallback for non-matching lines."""
+        content = "This is just a plain log message"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+            f.write(content)
+            f.flush()
+            records = parse_preview(Path(f.name), "syslog", limit=10)
+            assert len(records) == 1
+            assert records[0] == {"message": "This is just a plain log message"}

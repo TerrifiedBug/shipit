@@ -1,21 +1,36 @@
 import csv
 import json
+import re
 from pathlib import Path
 from typing import Literal
 
 import ijson
 
-FileFormat = Literal["json_array", "ndjson", "csv"]
+FileFormat = Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog"]
 
 
 def detect_format(file_path: Path) -> FileFormat:
-    """Detect file format based on first non-whitespace character."""
+    """Detect file format based on extension and content."""
+    ext = file_path.suffix.lower()
+
+    # Extension-based detection
+    if ext == '.tsv':
+        return "tsv"
+    if ext == '.ltsv':
+        return "ltsv"
+    if ext == '.log':
+        # Check for syslog pattern (starts with <priority>)
+        with open(file_path, 'r', encoding='utf-8') as f:
+            first_line = f.readline()
+            if first_line.startswith('<') and '>' in first_line[:5]:
+                return "syslog"
+        return "csv"  # Default for .log if not syslog
+
+    # Content-based detection (existing logic)
     with open(file_path, "r", encoding="utf-8") as f:
-        # Read first non-whitespace character
         while True:
             char = f.read(1)
             if not char:
-                # Empty file, default to CSV
                 return "csv"
             if not char.isspace():
                 break
@@ -34,6 +49,12 @@ def parse_preview(file_path: Path, format: FileFormat, limit: int = 100) -> list
         return _parse_json_array(file_path, limit)
     elif format == "ndjson":
         return _parse_ndjson(file_path, limit)
+    elif format == "tsv":
+        return _parse_tsv(file_path, limit)
+    elif format == "ltsv":
+        return _parse_ltsv(file_path, limit)
+    elif format == "syslog":
+        return _parse_syslog(file_path, limit)
     else:
         return _parse_csv(file_path, limit)
 
@@ -83,6 +104,97 @@ def _parse_csv(file_path: Path, limit: int) -> list[dict]:
             if len(records) >= limit:
                 break
         return records
+
+
+def _parse_tsv(file_path: Path, limit: int) -> list[dict]:
+    """Parse tab-separated values."""
+    with open(file_path, "r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f, delimiter='\t')
+        records = []
+        for row in reader:
+            records.append(dict(row))
+            if len(records) >= limit:
+                break
+        return records
+
+
+def _parse_ltsv(file_path: Path, limit: int) -> list[dict]:
+    """Parse Labeled Tab-separated Values (key:value pairs separated by tabs)."""
+    records = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            record = {}
+            for pair in line.split('\t'):
+                if ':' in pair:
+                    key, value = pair.split(':', 1)
+                    record[key] = value
+
+            if record:
+                records.append(record)
+                if len(records) >= limit:
+                    break
+
+    return records
+
+
+def _parse_syslog(file_path: Path, limit: int) -> list[dict]:
+    """Parse syslog format (RFC 3164 and RFC 5424)."""
+    # RFC 3164: <PRI>TIMESTAMP HOSTNAME TAG: MESSAGE
+    # RFC 5424: <PRI>VERSION TIMESTAMP HOSTNAME APP-NAME PROCID MSGID SD MSG
+
+    rfc3164_pattern = re.compile(
+        r'^<(\d+)>(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(\S+)\s+(\S+?):\s*(.*)$'
+    )
+    rfc5424_pattern = re.compile(
+        r'^<(\d+)>(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(?:\[.*?\]\s*)?(.*)$'
+    )
+
+    records = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            record = {}
+
+            # Try RFC 5424 first (more structured)
+            match = rfc5424_pattern.match(line)
+            if match:
+                record = {
+                    "priority": match.group(1),
+                    "version": match.group(2),
+                    "timestamp": match.group(3),
+                    "hostname": match.group(4),
+                    "app_name": match.group(5),
+                    "proc_id": match.group(6),
+                    "msg_id": match.group(7),
+                    "message": match.group(8),
+                }
+            else:
+                # Try RFC 3164
+                match = rfc3164_pattern.match(line)
+                if match:
+                    record = {
+                        "priority": match.group(1),
+                        "timestamp": match.group(2),
+                        "hostname": match.group(3),
+                        "app_name": match.group(4),
+                        "message": match.group(5),
+                    }
+                else:
+                    # Fallback: just store as message
+                    record = {"message": line}
+
+            records.append(record)
+            if len(records) >= limit:
+                break
+
+    return records
 
 
 def infer_fields(records: list[dict]) -> list[dict]:
