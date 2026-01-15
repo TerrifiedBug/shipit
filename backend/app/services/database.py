@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -15,32 +16,54 @@ def get_db_path() -> Path:
     return data_dir / "shipit.db"
 
 
+def _init_uploads_table(conn: sqlite3.Connection) -> None:
+    """Create uploads table."""
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS uploads (
+            id              TEXT PRIMARY KEY,
+            filename        TEXT NOT NULL,
+            file_size       INTEGER NOT NULL,
+            file_format     TEXT NOT NULL,
+            index_name      TEXT,
+            timestamp_field TEXT,
+            field_mappings  TEXT,
+            excluded_fields TEXT,
+            status          TEXT NOT NULL DEFAULT 'pending',
+            total_records   INTEGER,
+            success_count   INTEGER DEFAULT 0,
+            failure_count   INTEGER DEFAULT 0,
+            started_at      TIMESTAMP,
+            completed_at    TIMESTAMP,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            error_message   TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_uploads_created_at ON uploads(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_uploads_status ON uploads(status);
+    """)
+
+
+def _init_users_table(conn: sqlite3.Connection) -> None:
+    """Create users table."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            name TEXT,
+            auth_type TEXT NOT NULL,
+            password_hash TEXT,
+            is_admin INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP
+        )
+    """)
+
+
 def init_db() -> None:
     """Initialize the database schema."""
     with get_connection() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS uploads (
-                id              TEXT PRIMARY KEY,
-                filename        TEXT NOT NULL,
-                file_size       INTEGER NOT NULL,
-                file_format     TEXT NOT NULL,
-                index_name      TEXT,
-                timestamp_field TEXT,
-                field_mappings  TEXT,
-                excluded_fields TEXT,
-                status          TEXT NOT NULL DEFAULT 'pending',
-                total_records   INTEGER,
-                success_count   INTEGER DEFAULT 0,
-                failure_count   INTEGER DEFAULT 0,
-                started_at      TIMESTAMP,
-                completed_at    TIMESTAMP,
-                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                error_message   TEXT
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_uploads_created_at ON uploads(created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_uploads_status ON uploads(status);
-        """)
+        _init_uploads_table(conn)
+        _init_users_table(conn)
 
 
 @contextmanager
@@ -217,3 +240,70 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
             result["excluded_fields"] = []
 
     return result
+
+
+# User functions
+
+
+def create_user(
+    email: str,
+    name: str | None,
+    auth_type: str,
+    password_hash: str | None = None,
+    is_admin: bool = False,
+) -> dict:
+    """Create a new user."""
+    user_id = str(uuid.uuid4())
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO users (id, email, name, auth_type, password_hash, is_admin)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, email, name, auth_type, password_hash, 1 if is_admin else 0),
+        )
+    return get_user_by_id(user_id)
+
+
+def get_user_by_id(user_id: str) -> dict | None:
+    """Get user by ID."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+    if row:
+        return dict(row)
+    return None
+
+
+def get_user_by_email(email: str) -> dict | None:
+    """Get user by email."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE email = ?", (email,)
+        ).fetchone()
+    if row:
+        return dict(row)
+    return None
+
+
+def list_users() -> list[dict]:
+    """List all users."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_user_last_login(user_id: str) -> None:
+    """Update user's last login timestamp."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET last_login = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), user_id),
+        )
+
+
+def count_users() -> int:
+    """Count total users."""
+    with get_connection() as conn:
+        return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]

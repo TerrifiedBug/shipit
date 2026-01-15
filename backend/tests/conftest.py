@@ -1,7 +1,19 @@
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+
+from app.services import database
+
+
+@pytest.fixture
+def db(tmp_path):
+    """Use a temporary database for tests."""
+    db_path = tmp_path / "test.db"
+    with patch.object(database, "get_db_path", return_value=db_path):
+        database.init_db()
+        yield db_path
 
 
 @pytest.fixture
