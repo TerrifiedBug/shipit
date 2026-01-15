@@ -10,6 +10,8 @@ from app.services.database import (
     get_api_key_by_hash,
     list_api_keys_for_user,
     delete_api_key,
+    create_audit_log,
+    list_audit_logs,
 )
 
 
@@ -77,3 +79,22 @@ class TestApiKeys:
         delete_api_key(api_key["id"])
         found = get_api_key_by_hash(key_hash)
         assert found is None
+
+
+class TestAuditLog:
+    def test_create_audit_log(self, db):
+        user = create_user(email="audit@example.com", name="Audit User", auth_type="local")
+        log = create_audit_log(
+            user_id=user["id"],
+            action="delete_index",
+            target="shipit-test",
+        )
+        assert log["id"] is not None
+        assert log["action"] == "delete_index"
+
+    def test_list_audit_logs(self, db):
+        user = create_user(email="audit2@example.com", name="Audit User", auth_type="local")
+        create_audit_log(user_id=user["id"], action="action1", target="target1")
+        create_audit_log(user_id=user["id"], action="action2", target="target2")
+        logs = list_audit_logs()
+        assert len(logs) >= 2
