@@ -44,32 +44,49 @@ def _get_failures_dir() -> Path:
     return failures_dir
 
 
+def _sanitize_filename(filename: str | None) -> str:
+    """Sanitize filename to prevent path traversal attacks.
+
+    Strips any directory components (e.g., '../', '/etc/') and returns
+    only the base filename.
+    """
+    if not filename:
+        return ""
+    # Path.name extracts just the filename, stripping any directory components
+    return Path(filename).name
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_files(files: list[UploadFile] = File(...), request: Request = None):
     """Upload one or more files and return preview data."""
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
-    # Validate all files have supported extensions
+    # Sanitize and validate all filenames
     valid_extensions = ('.json', '.csv', '.tsv', '.ltsv', '.log')
+    sanitized_filenames: list[str] = []
+
     for file in files:
-        if not file.filename:
+        # Sanitize filename to prevent path traversal
+        safe_name = _sanitize_filename(file.filename)
+        if not safe_name:
             raise HTTPException(status_code=400, detail="No filename provided")
-        if not file.filename.lower().endswith(valid_extensions):
+        if not safe_name.lower().endswith(valid_extensions):
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported file type: {file.filename}. Supported: JSON, CSV, TSV, LTSV, LOG"
+                detail=f"Unsupported file type: {safe_name}. Supported: JSON, CSV, TSV, LTSV, LOG"
             )
+        sanitized_filenames.append(safe_name)
 
     # Check for duplicate filenames
     seen_filenames = set()
-    for file in files:
-        if file.filename in seen_filenames:
+    for safe_name in sanitized_filenames:
+        if safe_name in seen_filenames:
             raise HTTPException(
                 status_code=400,
-                detail=f"Duplicate filename: {file.filename}"
+                detail=f"Duplicate filename: {safe_name}"
             )
-        seen_filenames.add(file.filename)
+        seen_filenames.add(safe_name)
 
     upload_id = str(uuid.uuid4())
     upload_dir = _get_upload_dir() / upload_id  # Create subdirectory for this upload
@@ -80,8 +97,8 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
     total_size = 0
 
     try:
-        for file in files:
-            file_path = upload_dir / file.filename
+        for file, safe_name in zip(files, sanitized_filenames):
+            file_path = upload_dir / safe_name
             with open(file_path, "wb") as f:
                 shutil.copyfileobj(file.file, f)
             await file.close()
@@ -120,12 +137,11 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
 
         fields = infer_fields(preview_records)
 
-        # Create database record
+        # Create database record (use sanitized filenames)
         user = getattr(request.state, "user", None) if request else None
-        filenames = [file.filename for file in files]
         db.create_upload(
             upload_id=upload_id,
-            filenames=filenames,
+            filenames=sanitized_filenames,
             file_sizes=file_sizes,
             file_format=file_format,
             user_id=user["id"] if user else None,
@@ -147,8 +163,8 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
 
     return UploadResponse(
         upload_id=upload_id,
-        filename=", ".join(filenames) if len(filenames) > 1 else filenames[0],
-        filenames=filenames,
+        filename=", ".join(sanitized_filenames) if len(sanitized_filenames) > 1 else sanitized_filenames[0],
+        filenames=sanitized_filenames,
         file_size=total_size,
         file_format=file_format,
         preview=preview_records[:100],  # Limit preview in response
