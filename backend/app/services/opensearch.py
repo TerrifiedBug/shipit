@@ -123,6 +123,16 @@ def delete_index(index_name: str) -> bool:
         return False
 
 
+def list_indexes(prefix: str) -> set[str]:
+    """Get set of all index names matching prefix."""
+    try:
+        client = get_client()
+        response = client.cat.indices(index=f"{prefix}*", format="json")
+        return {idx["index"] for idx in response}
+    except Exception:
+        return set()
+
+
 def validate_index_name(index_name: str) -> tuple[bool, str]:
     """
     Validate that an index name is valid and has the required prefix.
