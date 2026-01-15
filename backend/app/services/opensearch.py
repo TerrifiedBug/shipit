@@ -128,8 +128,12 @@ def list_indexes(prefix: str) -> set[str]:
     try:
         client = get_client()
         response = client.cat.indices(index=f"{prefix}*", format="json")
-        return {idx["index"] for idx in response}
-    except Exception:
+        indexes = {idx["index"] for idx in response}
+        return indexes
+    except Exception as e:
+        # Log the error so we can debug index existence issues
+        import logging
+        logging.warning(f"Failed to list indexes with prefix '{prefix}': {e}")
         return set()
 
 

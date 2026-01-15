@@ -316,9 +316,9 @@ export function History({ onClose }: HistoryProps) {
                             ) : null}
 
                             {/* Field mappings */}
-                            {upload.field_mappings && Object.keys(upload.field_mappings).length > 0 && (
-                              <div>
-                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Field Mappings</h4>
+                            <div>
+                              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Field Mappings</h4>
+                              {upload.field_mappings && Object.keys(upload.field_mappings).length > 0 ? (
                                 <div className="flex flex-wrap gap-2">
                                   {Object.entries(upload.field_mappings).map(([from, to]) => (
                                     <span key={from} className="text-sm bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded">
@@ -326,8 +326,10 @@ export function History({ onClose }: HistoryProps) {
                                     </span>
                                   ))}
                                 </div>
-                              </div>
-                            )}
+                              ) : (
+                                <p className="text-sm text-gray-500 dark:text-gray-400">No fields re-mapped</p>
+                              )}
+                            </div>
 
                             {/* Error message */}
                             {upload.error_message && (
@@ -533,9 +535,9 @@ function UploadDetails({ upload, onClose }: { upload: UploadRecord; onClose: () 
             </div>
           )}
 
-          {upload.field_mappings && Object.keys(upload.field_mappings).length > 0 && (
-            <div>
-              <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Field Mappings</label>
+          <div>
+            <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Field Mappings</label>
+            {upload.field_mappings && Object.keys(upload.field_mappings).length > 0 ? (
               <div className="mt-1 text-sm bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white p-2 rounded font-mono">
                 {Object.entries(upload.field_mappings).map(([from, to]) => (
                   <div key={from}>
@@ -543,8 +545,10 @@ function UploadDetails({ upload, onClose }: { upload: UploadRecord; onClose: () 
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">No fields re-mapped</p>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
