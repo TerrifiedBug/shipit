@@ -368,24 +368,26 @@ export function Users({ onClose }: UsersProps) {
                     </span>
                   </label>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Reset Password (optional)
-                  </label>
-                  <input
-                    type="password"
-                    value={editNewPassword}
-                    onChange={(e) => setEditNewPassword(e.target.value)}
-                    minLength={8}
-                    placeholder="Leave blank to keep current password"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                  {editNewPassword && (
-                    <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
-                      User will be required to change password on next login.
-                    </p>
-                  )}
-                </div>
+                {editingUser.auth_type === 'local' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Reset Password (optional)
+                    </label>
+                    <input
+                      type="password"
+                      value={editNewPassword}
+                      onChange={(e) => setEditNewPassword(e.target.value)}
+                      minLength={8}
+                      placeholder="Leave blank to keep current password"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                    {editNewPassword && (
+                      <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
+                        User will be required to change password on next login.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     type="button"
