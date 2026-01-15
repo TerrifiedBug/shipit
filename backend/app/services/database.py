@@ -200,6 +200,16 @@ def mark_index_deleted(index_name: str) -> int:
         return cursor.rowcount
 
 
+def delete_pending_upload(upload_id: str) -> bool:
+    """Delete a pending upload record. Only allows deletion of pending uploads."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM uploads WHERE id = ? AND status = 'pending'",
+            (upload_id,),
+        )
+        return cursor.rowcount > 0
+
+
 def start_ingestion(
     upload_id: str,
     index_name: str,
