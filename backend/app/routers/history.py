@@ -38,10 +38,16 @@ async def get_history(
     return {"uploads": uploads, "limit": limit, "offset": offset}
 
 
+def _sanitize_upload_id(upload_id: str) -> str:
+    """Sanitize upload_id to prevent path traversal attacks."""
+    return Path(upload_id).name
+
+
 @router.get("/upload/{upload_id}/failures")
 async def download_failures(upload_id: str):
     """Download failed records for an upload as JSON."""
-    upload = get_upload(upload_id)
+    safe_id = _sanitize_upload_id(upload_id)
+    upload = get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
@@ -49,7 +55,7 @@ async def download_failures(upload_id: str):
         raise HTTPException(status_code=404, detail="No failed records")
 
     # Check for failures file
-    failures_file = Path(settings.data_dir) / "failures" / f"{upload_id}.json"
+    failures_file = Path(settings.data_dir) / "failures" / f"{safe_id}.json"
     if not failures_file.exists():
         raise HTTPException(
             status_code=404,

@@ -56,6 +56,11 @@ def _sanitize_filename(filename: str | None) -> str:
     return Path(filename).name
 
 
+def _sanitize_upload_id(upload_id: str) -> str:
+    """Sanitize upload_id to prevent path traversal attacks."""
+    return Path(upload_id).name
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_files(files: list[UploadFile] = File(...), request: Request = None):
     """Upload one or more files and return preview data."""
@@ -175,19 +180,20 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
 @router.get("/upload/{upload_id}/preview", response_model=PreviewResponse)
 async def get_preview(upload_id: str):
     """Get preview data for previously uploaded file(s)."""
-    upload = db.get_upload(upload_id)
+    safe_id = _sanitize_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
     # Get from cache or re-parse
-    cache = _upload_cache.get(upload_id)
+    cache = _upload_cache.get(safe_id)
     if cache:
         preview = cache["preview"]
         fields = cache["fields"]
     else:
         # Re-parse if not in cache (e.g., after server restart)
         # Files are stored in a subdirectory named by upload_id
-        upload_dir = _get_upload_dir() / upload_id
+        upload_dir = _get_upload_dir() / safe_id
         filenames = upload.get("filenames", [upload["filename"]])
 
         if not upload_dir.exists():
@@ -209,14 +215,14 @@ async def get_preview(upload_id: str):
             raise HTTPException(status_code=404, detail="Uploaded files no longer exist")
 
         fields = infer_fields(preview)
-        _upload_cache[upload_id] = {
+        _upload_cache[safe_id] = {
             "file_paths": file_paths,
             "preview": preview,
             "fields": fields,
         }
 
     return PreviewResponse(
-        upload_id=upload_id,
+        upload_id=safe_id,
         filename=upload["filename"],
         file_format=upload["file_format"],
         preview=preview[:100],
@@ -338,7 +344,8 @@ def _run_ingestion_task(
 @router.post("/upload/{upload_id}/ingest")
 async def start_ingest(upload_id: str, request: IngestRequest):
     """Start ingestion of uploaded file(s) into OpenSearch (async)."""
-    upload = db.get_upload(upload_id)
+    safe_id = _sanitize_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
@@ -351,12 +358,12 @@ async def start_ingest(upload_id: str, request: IngestRequest):
         raise HTTPException(status_code=400, detail=error_msg)
 
     # Get file paths (multi-file upload)
-    cache = _upload_cache.get(upload_id)
+    cache = _upload_cache.get(safe_id)
     if cache and "file_paths" in cache:
         file_paths = [Path(fp) for fp in cache["file_paths"]]
     else:
         # Fallback: reconstruct from database
-        upload_dir = _get_upload_dir() / upload_id
+        upload_dir = _get_upload_dir() / safe_id
         filenames = upload.get("filenames", [upload["filename"]])
         file_paths = [upload_dir / fn for fn in filenames]
 
@@ -373,7 +380,7 @@ async def start_ingest(upload_id: str, request: IngestRequest):
 
     # Update database with ingestion config
     db.start_ingestion(
-        upload_id=upload_id,
+        upload_id=safe_id,
         index_name=full_index_name,
         timestamp_field=request.timestamp_field,
         field_mappings=request.field_mappings,
@@ -382,7 +389,7 @@ async def start_ingest(upload_id: str, request: IngestRequest):
     )
 
     # Initialize progress tracking
-    _ingestion_progress[upload_id] = {
+    _ingestion_progress[safe_id] = {
         "processed": 0,
         "success": 0,
         "failed": 0,
@@ -398,7 +405,7 @@ async def start_ingest(upload_id: str, request: IngestRequest):
     thread = threading.Thread(
         target=_run_ingestion_task,
         args=(
-            upload_id,
+            safe_id,
             existing_paths,
             upload["file_format"],
             full_index_name,
@@ -412,7 +419,7 @@ async def start_ingest(upload_id: str, request: IngestRequest):
 
     # Return immediately with status
     return {
-        "upload_id": upload_id,
+        "upload_id": safe_id,
         "index_name": full_index_name,
         "status": "in_progress",
         "total_records": total_records,
@@ -422,7 +429,8 @@ async def start_ingest(upload_id: str, request: IngestRequest):
 @router.post("/upload/{upload_id}/cancel")
 async def cancel_ingest(upload_id: str, delete_index: bool = False):
     """Cancel an in-progress ingestion."""
-    upload = db.get_upload(upload_id)
+    safe_id = _sanitize_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
@@ -430,12 +438,12 @@ async def cancel_ingest(upload_id: str, delete_index: bool = False):
         raise HTTPException(status_code=400, detail="Ingestion is not in progress")
 
     # Set cancellation flag
-    _cancellation_flags[upload_id] = True
+    _cancellation_flags[safe_id] = True
 
     # Wait briefly for ingestion thread to notice cancellation
     for _ in range(10):
         await asyncio.sleep(0.1)
-        progress = _ingestion_progress.get(upload_id)
+        progress = _ingestion_progress.get(safe_id)
         if progress and progress.get("cancelled"):
             break
 
@@ -446,11 +454,11 @@ async def cancel_ingest(upload_id: str, delete_index: bool = False):
         index_deleted = os_delete_index(upload["index_name"])
         if index_deleted:
             # Mark in database that index was deleted
-            db.update_upload(upload_id, index_deleted=1)
+            db.update_upload(safe_id, index_deleted=1)
 
     return {
         "status": "cancelled",
-        "upload_id": upload_id,
+        "upload_id": safe_id,
         "index_deleted": index_deleted if delete_index else None,
     }
 
@@ -458,7 +466,8 @@ async def cancel_ingest(upload_id: str, delete_index: bool = False):
 @router.get("/upload/{upload_id}/status")
 async def get_status(upload_id: str):
     """SSE endpoint for live ingestion progress."""
-    upload = db.get_upload(upload_id)
+    safe_id = _sanitize_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
@@ -467,7 +476,7 @@ async def get_status(upload_id: str):
 
         while True:
             # Get current progress
-            progress = _ingestion_progress.get(upload_id)
+            progress = _ingestion_progress.get(safe_id)
 
             if progress:
                 if progress["processed"] != last_processed or progress.get("error") or progress.get("completed"):
@@ -495,7 +504,7 @@ async def get_status(upload_id: str):
 
             # Check database for status if no active progress
             else:
-                current = db.get_upload(upload_id)
+                current = db.get_upload(safe_id)
                 if current and current["status"] in ("completed", "failed"):
                     event_data = {
                         "processed": current["total_records"] or 0,
@@ -531,7 +540,8 @@ async def abandon_upload(upload_id: str):
 @router.delete("/upload/{upload_id}")
 async def delete_upload(upload_id: str):
     """Delete a pending upload that was abandoned before ingestion started."""
-    upload = db.get_upload(upload_id)
+    safe_id = _sanitize_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
@@ -542,16 +552,16 @@ async def delete_upload(upload_id: str):
         )
 
     # Clean up uploaded files
-    upload_dir = _get_upload_dir() / upload_id
+    upload_dir = _get_upload_dir() / safe_id
     if upload_dir.exists():
         shutil.rmtree(upload_dir, ignore_errors=True)
 
     # Remove from cache
-    _upload_cache.pop(upload_id, None)
+    _upload_cache.pop(safe_id, None)
 
     # Delete from database
-    deleted = db.delete_pending_upload(upload_id)
+    deleted = db.delete_pending_upload(safe_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Upload not found or already processed")
 
-    return {"status": "deleted", "upload_id": upload_id}
+    return {"status": "deleted", "upload_id": safe_id}
