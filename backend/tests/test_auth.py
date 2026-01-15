@@ -1,6 +1,7 @@
 import hashlib
 
 import pytest
+from app.services.auth import hash_password, verify_password, create_session_token, verify_session_token
 from app.services.database import (
     create_user,
     get_user_by_id,
@@ -98,3 +99,28 @@ class TestAuditLog:
         create_audit_log(user_id=user["id"], action="action2", target="target2")
         logs = list_audit_logs()
         assert len(logs) >= 2
+
+
+class TestAuthService:
+    def test_hash_and_verify_password(self):
+        password = "mysecretpassword"
+        hashed = hash_password(password)
+        assert hashed != password
+        assert verify_password(password, hashed) is True
+        assert verify_password("wrongpassword", hashed) is False
+
+    def test_create_and_verify_session_token(self):
+        user_id = "user-123"
+        token = create_session_token(user_id)
+        assert token is not None
+        payload = verify_session_token(token)
+        assert payload is not None
+        assert payload["sub"] == user_id
+
+    def test_expired_session_token(self):
+        # Create token with -1 hour expiry (already expired)
+        user_id = "user-123"
+        from app.services.auth import _create_token
+        token = _create_token(user_id, expires_hours=-1)
+        payload = verify_session_token(token)
+        assert payload is None
