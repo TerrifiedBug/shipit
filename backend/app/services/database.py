@@ -74,12 +74,27 @@ def _init_api_keys_table(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _init_audit_log_table(conn: sqlite3.Connection) -> None:
+    """Create audit_log table."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            action TEXT NOT NULL,
+            target TEXT,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+
 def init_db() -> None:
     """Initialize the database schema."""
     with get_connection() as conn:
         _init_uploads_table(conn)
         _init_users_table(conn)
         _init_api_keys_table(conn)
+        _init_audit_log_table(conn)
 
 
 @contextmanager
@@ -393,3 +408,48 @@ def update_api_key_last_used(key_id: str) -> None:
             "UPDATE api_keys SET last_used = ? WHERE id = ?",
             (datetime.utcnow().isoformat(), key_id),
         )
+
+
+# Audit log functions
+
+
+def create_audit_log(
+    user_id: str,
+    action: str,
+    target: str | None = None,
+    details: str | None = None,
+) -> dict:
+    """Create an audit log entry."""
+    log_id = str(uuid.uuid4())
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO audit_log (id, user_id, action, target, details)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (log_id, user_id, action, target, details),
+        )
+        row = conn.execute("SELECT * FROM audit_log WHERE id = ?", (log_id,)).fetchone()
+    return dict(row)
+
+
+def list_audit_logs(
+    user_id: str | None = None,
+    action: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict]:
+    """List audit logs with optional filters."""
+    query = "SELECT * FROM audit_log WHERE 1=1"
+    params = []
+    if user_id:
+        query += " AND user_id = ?"
+        params.append(user_id)
+    if action:
+        query += " AND action = ?"
+        params.append(action)
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
