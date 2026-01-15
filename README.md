@@ -1,13 +1,14 @@
 # <img src="docs/logo.png" width="32" height="32" alt="ShipIt"> ShipIt
 
-Self-service file ingestion tool for OpenSearch. Designed for ad-hoc data uploads during investigations, troubleshooting, and analysis - quickly get JSON, CSV, or log data into OpenSearch without writing ingestion pipelines.
+Self-service file ingestion tool for OpenSearch. Designed for ad-hoc data uploads during investigations, troubleshooting, and analysis - quickly get JSON, CSV, TSV, LTSV, or syslog data into OpenSearch without writing ingestion pipelines.
 
 ## Features
 
 - **Authentication**: Local users, OIDC SSO, and API keys for automation
 - **User Management**: Admin UI for creating/editing/deleting users
 - **OIDC SSO**: Enterprise single sign-on with auto-provisioning and group-based roles
-- **Drag-and-drop upload**: JSON array, NDJSON, CSV formats
+- **Drag-and-drop upload**: JSON, NDJSON, CSV, TSV, LTSV, and syslog formats
+- **Multi-file upload**: Combine multiple files of the same format into a single index
 - **Auto-detection**: File format and field type inference
 - **Field mapping**: Rename, exclude, and configure fields before ingestion
 - **Timestamp parsing**: Automatic UTC conversion for various formats
@@ -118,6 +119,9 @@ Example OpenSearch security role:
 - **JSON Array**: `[{"field": "value"}, ...]`
 - **NDJSON**: One JSON object per line
 - **CSV**: Comma or semicolon delimited with header row
+- **TSV**: Tab-separated values with header row
+- **LTSV**: Labeled Tab-separated Values (`label:value\tlabel:value`)
+- **Syslog**: RFC 3164 and RFC 5424 syslog message formats
 
 ## Timestamp Handling
 
@@ -210,14 +214,12 @@ API keys inherit the creating user's permissions and are tracked in audit logs.
 - Visual indicator when index has been deleted
 - APP_URL configuration for proxy/DNS deployments
 
-## Roadmap (V3)
-
-Planned features for the next release:
+## What's New in V3
 
 ### Index Existence Check
-- Detect when indexes are deleted externally (outside ShipIt)
-- History page shows visual indicator for missing indexes
-- Distinguish "deleted via ShipIt" from "deleted externally"
+- Detects when indexes are deleted externally (outside ShipIt)
+- History page shows "(missing)" indicator for externally-deleted indexes
+- Distinguishes "deleted via ShipIt" from "deleted externally"
 
 ### Configurable Batch Size
 - New `BULK_BATCH_SIZE` environment variable (default: 1000)
@@ -225,12 +227,12 @@ Planned features for the next release:
 
 ### Multi-File Upload
 - Select multiple files to combine into a single index
-- All files must be same format (JSON, CSV, etc.)
-- Union of fields across files with conflict detection
+- All files must be same format (JSON, CSV, TSV, etc.)
+- Duplicate filename detection prevents overwrites
 
 ### Additional File Parsers
-- **TSV**: Tab-separated values
-- **LTSV**: Labeled Tab-separated Values (common in web server logs)
+- **TSV**: Tab-separated values with header row
+- **LTSV**: Labeled Tab-separated Values (`label:value` pairs)
 - **Syslog**: RFC 3164 and RFC 5424 syslog message formats
 
 ## Roadmap (V4+)
