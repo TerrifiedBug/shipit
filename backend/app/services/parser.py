@@ -19,12 +19,27 @@ def detect_format(file_path: Path) -> FileFormat:
     if ext == '.ltsv':
         return "ltsv"
     if ext == '.log':
-        # Check for syslog pattern (starts with <priority>)
         with open(file_path, 'r', encoding='utf-8') as f:
-            first_line = f.readline()
+            first_line = f.readline().strip()
+
+            # Check for syslog pattern (starts with <priority>)
             if first_line.startswith('<') and '>' in first_line[:5]:
                 return "syslog"
-        return "csv"  # Default for .log if not syslog
+
+            # Check for LTSV pattern (key:value pairs separated by tabs or spaces)
+            # LTSV has multiple key:value pairs where key doesn't contain spaces
+            if '\t' in first_line:
+                pairs = first_line.split('\t')
+            else:
+                pairs = re.split(r'\s{2,}', first_line)
+
+            if len(pairs) >= 2:
+                # Check if most pairs look like key:value (word:something)
+                ltsv_like = sum(1 for p in pairs if re.match(r'^\w+:', p))
+                if ltsv_like >= len(pairs) * 0.7:  # 70% match threshold
+                    return "ltsv"
+
+        return "csv"  # Default for .log if not syslog or ltsv
 
     # Content-based detection (existing logic)
     with open(file_path, "r", encoding="utf-8") as f:
