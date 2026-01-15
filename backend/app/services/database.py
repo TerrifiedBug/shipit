@@ -2,7 +2,7 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -59,11 +59,27 @@ def _init_users_table(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _init_api_keys_table(conn: sqlite3.Connection) -> None:
+    """Create api_keys table."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            name TEXT NOT NULL,
+            key_hash TEXT NOT NULL UNIQUE,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_used TIMESTAMP
+        )
+    """)
+
+
 def init_db() -> None:
     """Initialize the database schema."""
     with get_connection() as conn:
         _init_uploads_table(conn)
         _init_users_table(conn)
+        _init_api_keys_table(conn)
 
 
 @contextmanager
@@ -307,3 +323,73 @@ def count_users() -> int:
     """Count total users."""
     with get_connection() as conn:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+# API Key functions
+
+
+def create_api_key(
+    user_id: str,
+    name: str,
+    key_hash: str,
+    expires_in_days: int,
+) -> dict:
+    """Create a new API key."""
+    key_id = str(uuid.uuid4())
+    expires_at = (datetime.utcnow() + timedelta(days=expires_in_days)).isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO api_keys (id, user_id, name, key_hash, expires_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (key_id, user_id, name, key_hash, expires_at),
+        )
+    return get_api_key_by_id(key_id)
+
+
+def get_api_key_by_id(key_id: str) -> dict | None:
+    """Get API key by ID."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM api_keys WHERE id = ?", (key_id,)
+        ).fetchone()
+    if row:
+        return dict(row)
+    return None
+
+
+def get_api_key_by_hash(key_hash: str) -> dict | None:
+    """Get API key by hash."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM api_keys WHERE key_hash = ?", (key_hash,)
+        ).fetchone()
+    if row:
+        return dict(row)
+    return None
+
+
+def list_api_keys_for_user(user_id: str) -> list[dict]:
+    """List all API keys for a user."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def delete_api_key(key_id: str) -> None:
+    """Delete an API key."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
+
+
+def update_api_key_last_used(key_id: str) -> None:
+    """Update API key last used timestamp."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE api_keys SET last_used = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), key_id),
+        )
