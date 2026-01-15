@@ -10,9 +10,10 @@ class FieldInfo(BaseModel):
 
 class UploadResponse(BaseModel):
     upload_id: str
-    filename: str
-    file_size: int
-    file_format: Literal["json_array", "ndjson", "csv"]
+    filename: str  # Display name (comma-separated if multiple)
+    filenames: list[str] = []  # Individual filenames
+    file_size: int  # Total size
+    file_format: Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog"]
     preview: list[dict[str, Any]]
     fields: list[FieldInfo]
 
@@ -20,7 +21,7 @@ class UploadResponse(BaseModel):
 class PreviewResponse(BaseModel):
     upload_id: str
     filename: str
-    file_format: Literal["json_array", "ndjson", "csv"]
+    file_format: Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog"]
     preview: list[dict[str, Any]]
     fields: list[FieldInfo]
 
