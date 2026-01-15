@@ -5,8 +5,10 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   needsSetup: boolean;
+  passwordChangeRequired: boolean;
   login: (user: User) => void;
   logout: () => Promise<void>;
+  clearPasswordChangeRequired: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -15,6 +17,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -26,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (currentUser) {
         setUser(currentUser);
         setNeedsSetup(false);
+        setPasswordChangeRequired(currentUser.password_change_required ?? false);
       } else {
         // Check if setup is needed by trying to access the setup endpoint
         const response = await fetch(
@@ -50,7 +54,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback((user: User) => {
     setUser(user);
     setNeedsSetup(false);
+    setPasswordChangeRequired(user.password_change_required ?? false);
   }, []);
+
+  const clearPasswordChangeRequired = useCallback(() => {
+    setPasswordChangeRequired(false);
+    if (user) {
+      setUser({ ...user, password_change_required: false });
+    }
+  }, [user]);
 
   const logout = useCallback(async () => {
     await apiLogout();
@@ -58,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, needsSetup, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, needsSetup, passwordChangeRequired, login, logout, clearPasswordChangeRequired }}>
       {children}
     </AuthContext.Provider>
   );

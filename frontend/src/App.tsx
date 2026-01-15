@@ -6,6 +6,8 @@ import { Result } from './components/Result';
 import { History } from './components/History';
 import { Login } from './components/Login';
 import { ApiKeys } from './components/ApiKeys';
+import { Users } from './components/Users';
+import { PasswordChangeModal } from './components/PasswordChangeModal';
 import { IngestResponse, UploadResponse } from './api/client';
 import { useTheme } from './contexts/ThemeContext';
 import { useAuth } from './contexts/AuthContext';
@@ -118,12 +120,13 @@ function LoadingSpinner() {
 }
 
 function App() {
-  const { user, loading, needsSetup, login } = useAuth();
+  const { user, loading, needsSetup, passwordChangeRequired, login, clearPasswordChangeRequired } = useAuth();
   const [state, setState] = useState<AppState>('upload');
   const [uploadData, setUploadData] = useState<UploadResponse | null>(null);
   const [ingestResult, setIngestResult] = useState<IngestResponse | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
+  const [showUsers, setShowUsers] = useState(false);
 
   // Show loading spinner while checking auth
   if (loading) {
@@ -133,6 +136,15 @@ function App() {
   // Show login if not authenticated
   if (!user) {
     return <Login isSetupMode={needsSetup} onLogin={login} />;
+  }
+
+  // Show password change modal if required
+  if (passwordChangeRequired) {
+    return (
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+        <PasswordChangeModal onSuccess={clearPasswordChangeRequired} />
+      </div>
+    );
   }
 
   const handleUploadComplete = (data: UploadResponse) => {
@@ -163,6 +175,14 @@ function App() {
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ShipIt</h1>
             <div className="flex items-center gap-2">
               <ThemeToggle />
+              {user?.is_admin ? (
+                <button
+                  onClick={() => setShowUsers(true)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+                >
+                  Users
+                </button>
+              ) : null}
               <button
                 onClick={() => setShowApiKeys(true)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
@@ -183,6 +203,7 @@ function App() {
 
       {showHistory && <History onClose={() => setShowHistory(false)} />}
       {showApiKeys && <ApiKeys onClose={() => setShowApiKeys(false)} />}
+      {showUsers && <Users onClose={() => setShowUsers(false)} />}
       <main>
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
           {state === 'upload' && (

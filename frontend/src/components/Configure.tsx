@@ -179,8 +179,16 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
 
   const handleCancel = async (deleteIndex: boolean) => {
     try {
-      await cancelIngest(data.upload_id, deleteIndex);
-      addToast('Ingestion cancelled', 'info');
+      const result = await cancelIngest(data.upload_id, deleteIndex);
+      if (deleteIndex) {
+        if (result.index_deleted) {
+          addToast('Ingestion cancelled and index deleted', 'success');
+        } else {
+          addToast('Ingestion cancelled but failed to delete index', 'warning');
+        }
+      } else {
+        addToast('Ingestion cancelled', 'info');
+      }
       onReset();
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to cancel', 'error');

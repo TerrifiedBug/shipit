@@ -6,6 +6,7 @@ export interface User {
   email: string;
   name: string;
   is_admin: number;
+  password_change_required?: boolean;
 }
 
 export async function getCurrentUser(): Promise<User | null> {
@@ -32,7 +33,10 @@ export async function login(email: string, password: string): Promise<User> {
     throw new Error(error.detail || 'Login failed');
   }
   const data = await response.json();
-  return data.user;
+  return {
+    ...data.user,
+    password_change_required: data.password_change_required,
+  };
 }
 
 export async function logout(): Promise<void> {
@@ -40,6 +44,41 @@ export async function logout(): Promise<void> {
     method: 'POST',
     credentials: 'include',
   });
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/auth/change-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to change password');
+  }
+}
+
+export interface AuthConfig {
+  oidc_enabled: boolean;
+  local_enabled: boolean;
+}
+
+export async function getAuthConfig(): Promise<AuthConfig> {
+  const response = await fetch(`${API_BASE}/api/auth/config`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    return { oidc_enabled: false, local_enabled: true };
+  }
+  return response.json();
+}
+
+export function getOidcLoginUrl(): string {
+  return `${API_BASE}/api/auth/oidc/login`;
 }
 
 export async function setup(email: string, password: string, name: string): Promise<User> {
@@ -125,6 +164,7 @@ export async function uploadFile(file: File): Promise<UploadResponse> {
 
   const response = await fetch(`${API_BASE}/api/upload`, {
     method: 'POST',
+    credentials: 'include',
     body: formData,
   });
 
@@ -137,7 +177,9 @@ export async function uploadFile(file: File): Promise<UploadResponse> {
 }
 
 export async function getPreview(uploadId: string): Promise<PreviewResponse> {
-  const response = await fetch(`${API_BASE}/api/upload/${uploadId}/preview`);
+  const response = await fetch(`${API_BASE}/api/upload/${uploadId}/preview`, {
+    credentials: 'include',
+  });
 
   if (!response.ok) {
     const error = await response.json();
@@ -171,6 +213,7 @@ export async function startIngest(
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include',
     body: JSON.stringify(request),
   });
 
@@ -191,7 +234,7 @@ export interface UploadRecord {
   timestamp_field: string | null;
   field_mappings: Record<string, string> | null;
   excluded_fields: string[] | null;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled';
   total_records: number | null;
   success_count: number | null;
   failure_count: number | null;
@@ -199,6 +242,9 @@ export interface UploadRecord {
   completed_at: string | null;
   created_at: string;
   error_message: string | null;
+  index_deleted: number;
+  user_name: string | null;
+  user_email: string | null;
 }
 
 export interface HistoryResponse {
@@ -220,7 +266,9 @@ export async function getHistory(
     params.append('status', status);
   }
 
-  const response = await fetch(`${API_BASE}/api/history?${params}`);
+  const response = await fetch(`${API_BASE}/api/history?${params}`, {
+    credentials: 'include',
+  });
 
   if (!response.ok) {
     const error = await response.json();
@@ -254,7 +302,9 @@ export function subscribeToProgress(
   onComplete: (data: ProgressEvent) => void,
   onError: (error: string) => void
 ): () => void {
-  const eventSource = new EventSource(`${API_BASE}/api/upload/${uploadId}/status`);
+  const eventSource = new EventSource(`${API_BASE}/api/upload/${uploadId}/status`, {
+    withCredentials: true,
+  });
 
   eventSource.addEventListener('progress', (event) => {
     onProgress(JSON.parse(event.data));
@@ -277,14 +327,22 @@ export function subscribeToProgress(
   return () => eventSource.close();
 }
 
-export async function cancelIngest(uploadId: string, deleteIndex: boolean): Promise<void> {
+export interface CancelResult {
+  status: string;
+  upload_id: string;
+  index_deleted: boolean | null;
+}
+
+export async function cancelIngest(uploadId: string, deleteIndex: boolean): Promise<CancelResult> {
   const response = await fetch(`${API_BASE}/api/upload/${uploadId}/cancel?delete_index=${deleteIndex}`, {
     method: 'POST',
+    credentials: 'include',
   });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to cancel ingestion');
   }
+  return response.json();
 }
 
 export async function deleteIndex(indexName: string): Promise<void> {
@@ -295,5 +353,80 @@ export async function deleteIndex(indexName: string): Promise<void> {
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to delete index');
+  }
+}
+
+// Admin user management types and functions
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string | null;
+  is_admin: boolean;
+  auth_type: string;
+  created_at: string;
+  last_login: string | null;
+}
+
+export interface CreateUserRequest {
+  email: string;
+  name: string;
+  password: string;
+  is_admin: boolean;
+}
+
+export interface UpdateUserRequest {
+  name?: string;
+  is_admin?: boolean;
+  new_password?: string;
+}
+
+export async function listUsers(): Promise<AdminUser[]> {
+  const response = await fetch(`${API_BASE}/api/admin/users`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to list users');
+  }
+  const data = await response.json();
+  return data.users;
+}
+
+export async function createUser(request: CreateUserRequest): Promise<AdminUser> {
+  const response = await fetch(`${API_BASE}/api/admin/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to create user');
+  }
+  return response.json();
+}
+
+export async function updateUser(userId: string, request: UpdateUserRequest): Promise<AdminUser> {
+  const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to update user');
+  }
+  return response.json();
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete user');
   }
 }

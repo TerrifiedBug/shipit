@@ -36,12 +36,18 @@ def _init_uploads_table(conn: sqlite3.Connection) -> None:
             completed_at    TIMESTAMP,
             created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             error_message   TEXT,
-            user_id         TEXT REFERENCES users(id)
+            user_id         TEXT REFERENCES users(id),
+            index_deleted   INTEGER DEFAULT 0
         );
 
         CREATE INDEX IF NOT EXISTS idx_uploads_created_at ON uploads(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_uploads_status ON uploads(status);
     """)
+    # Migration: add index_deleted column if it doesn't exist
+    try:
+        conn.execute("ALTER TABLE uploads ADD COLUMN index_deleted INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
 
 def _init_users_table(conn: sqlite3.Connection) -> None:
@@ -54,10 +60,21 @@ def _init_users_table(conn: sqlite3.Connection) -> None:
             auth_type TEXT NOT NULL,
             password_hash TEXT,
             is_admin INTEGER DEFAULT 0,
+            password_change_required INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_login TIMESTAMP
+            last_login TIMESTAMP,
+            deleted_at TIMESTAMP
         )
     """)
+    # Migration: add new columns if they don't exist
+    for column, definition in [
+        ("password_change_required", "INTEGER DEFAULT 0"),
+        ("deleted_at", "TIMESTAMP"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
 
 def _init_api_keys_table(conn: sqlite3.Connection) -> None:
@@ -169,6 +186,16 @@ def update_upload(upload_id: str, **kwargs) -> Optional[dict[str, Any]]:
     return get_upload(upload_id)
 
 
+def mark_index_deleted(index_name: str) -> int:
+    """Mark index as deleted for all uploads that used this index. Returns count of updated rows."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "UPDATE uploads SET index_deleted = 1 WHERE index_name = ?",
+            (index_name,),
+        )
+        return cursor.rowcount
+
+
 def start_ingestion(
     upload_id: str,
     index_name: str,
@@ -230,23 +257,28 @@ def list_uploads(
     offset: int = 0,
     status: Optional[str] = None,
 ) -> list[dict[str, Any]]:
-    """List uploads with optional filtering."""
+    """List uploads with optional filtering, including user info."""
     with get_connection() as conn:
+        base_query = """
+            SELECT uploads.*, users.name as user_name, users.email as user_email
+            FROM uploads
+            LEFT JOIN users ON uploads.user_id = users.id
+        """
         if status:
             rows = conn.execute(
-                """
-                SELECT * FROM uploads
-                WHERE status = ?
-                ORDER BY created_at DESC
+                f"""
+                {base_query}
+                WHERE uploads.status = ?
+                ORDER BY uploads.created_at DESC
                 LIMIT ? OFFSET ?
                 """,
                 (status, limit, offset),
             ).fetchall()
         else:
             rows = conn.execute(
-                """
-                SELECT * FROM uploads
-                ORDER BY created_at DESC
+                f"""
+                {base_query}
+                ORDER BY uploads.created_at DESC
                 LIMIT ? OFFSET ?
                 """,
                 (limit, offset),
@@ -284,16 +316,17 @@ def create_user(
     auth_type: str,
     password_hash: str | None = None,
     is_admin: bool = False,
+    password_change_required: bool = False,
 ) -> dict:
     """Create a new user."""
     user_id = str(uuid.uuid4())
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO users (id, email, name, auth_type, password_hash, is_admin)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, email, name, auth_type, password_hash, is_admin, password_change_required)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, email, name, auth_type, password_hash, 1 if is_admin else 0),
+            (user_id, email, name, auth_type, password_hash, 1 if is_admin else 0, 1 if password_change_required else 0),
         )
     return get_user_by_id(user_id)
 
@@ -320,11 +353,41 @@ def get_user_by_email(email: str) -> dict | None:
     return None
 
 
-def list_users() -> list[dict]:
-    """List all users."""
+def list_users(include_deleted: bool = True) -> list[dict]:
+    """List all users, optionally excluding deleted ones."""
     with get_connection() as conn:
-        rows = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
+        if include_deleted:
+            rows = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM users WHERE deleted_at IS NULL ORDER BY created_at DESC"
+            ).fetchall()
     return [dict(row) for row in rows]
+
+
+def update_user(user_id: str, **kwargs) -> dict | None:
+    """Update a user record with the given fields."""
+    if not kwargs:
+        return get_user_by_id(user_id)
+
+    set_clause = ", ".join(f"{k} = ?" for k in kwargs.keys())
+    values = list(kwargs.values()) + [user_id]
+
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE users SET {set_clause} WHERE id = ?",
+            values,
+        )
+    return get_user_by_id(user_id)
+
+
+def count_admins() -> int:
+    """Count active admin users."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) as count FROM users WHERE is_admin = 1 AND deleted_at IS NULL"
+        ).fetchone()
+    return row["count"] if row else 0
 
 
 def update_user_last_login(user_id: str) -> None:
