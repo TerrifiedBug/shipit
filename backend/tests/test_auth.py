@@ -1,6 +1,9 @@
 import hashlib
 
 import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
 from app.services.auth import hash_password, verify_password, create_session_token, verify_session_token
 from app.services.database import (
     create_user,
@@ -124,3 +127,99 @@ class TestAuthService:
         token = _create_token(user_id, expires_hours=-1)
         payload = verify_session_token(token)
         assert payload is None
+
+
+client = TestClient(app)
+
+
+class TestAuthEndpoints:
+    def test_setup_first_user(self, db):
+        response = client.post("/api/auth/setup", json={
+            "email": "admin@example.com",
+            "password": "adminpassword",
+            "name": "Admin User",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["email"] == "admin@example.com"
+        assert data["is_admin"] == 1
+
+    def test_setup_fails_when_users_exist(self, db):
+        # Create first user
+        client.post("/api/auth/setup", json={
+            "email": "admin@example.com",
+            "password": "adminpassword",
+            "name": "Admin",
+        })
+        # Try to create another via setup
+        response = client.post("/api/auth/setup", json={
+            "email": "hacker@example.com",
+            "password": "hackpass",
+            "name": "Hacker",
+        })
+        assert response.status_code == 400
+
+    def test_login_success(self, db):
+        # Setup user first
+        client.post("/api/auth/setup", json={
+            "email": "login@example.com",
+            "password": "testpassword",
+            "name": "Login User",
+        })
+        # Login
+        response = client.post("/api/auth/login", json={
+            "email": "login@example.com",
+            "password": "testpassword",
+        })
+        assert response.status_code == 200
+        assert "session" in response.cookies
+
+    def test_login_wrong_password(self, db):
+        client.post("/api/auth/setup", json={
+            "email": "wrong@example.com",
+            "password": "correctpassword",
+            "name": "User",
+        })
+        response = client.post("/api/auth/login", json={
+            "email": "wrong@example.com",
+            "password": "wrongpassword",
+        })
+        assert response.status_code == 401
+
+    def test_me_authenticated(self, db):
+        # Setup and login
+        client.post("/api/auth/setup", json={
+            "email": "me@example.com",
+            "password": "password",
+            "name": "Me User",
+        })
+        login_response = client.post("/api/auth/login", json={
+            "email": "me@example.com",
+            "password": "password",
+        })
+        # Get me
+        response = client.get("/api/auth/me", cookies=login_response.cookies)
+        assert response.status_code == 200
+        assert response.json()["email"] == "me@example.com"
+
+    def test_me_unauthenticated(self, db):
+        response = client.get("/api/auth/me")
+        assert response.status_code == 401
+
+    def test_logout(self, db):
+        # Setup and login
+        client.post("/api/auth/setup", json={
+            "email": "logout@example.com",
+            "password": "password",
+            "name": "Logout User",
+        })
+        login_response = client.post("/api/auth/login", json={
+            "email": "logout@example.com",
+            "password": "password",
+        })
+        # Logout
+        logout_response = client.post("/api/auth/logout", cookies=login_response.cookies)
+        assert logout_response.status_code == 200
+        # Session should be cleared
+        me_response = client.get("/api/auth/me", cookies=logout_response.cookies)
+        assert me_response.status_code == 401
