@@ -8,7 +8,7 @@ import { Login } from './components/Login';
 import { ApiKeys } from './components/ApiKeys';
 import { Users } from './components/Users';
 import { PasswordChangeModal } from './components/PasswordChangeModal';
-import { IngestResponse, UploadResponse } from './api/client';
+import { IngestResponse, UploadResponse, deletePendingUpload } from './api/client';
 import { useTheme } from './contexts/ThemeContext';
 import { useAuth } from './contexts/AuthContext';
 
@@ -162,6 +162,10 @@ function App() {
   };
 
   const handleReset = () => {
+    // If abandoning before ingestion started, delete the pending upload
+    if (uploadData && !ingestResult) {
+      deletePendingUpload(uploadData.upload_id);
+    }
     setUploadData(null);
     setIngestResult(null);
     setState('upload');

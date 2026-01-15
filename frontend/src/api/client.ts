@@ -358,6 +358,17 @@ export async function deleteIndex(indexName: string): Promise<void> {
   }
 }
 
+export async function deletePendingUpload(uploadId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/upload/${uploadId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  // Silently ignore errors - upload may have already been processed
+  if (!response.ok) {
+    console.warn('Failed to delete pending upload:', uploadId);
+  }
+}
+
 // Admin user management types and functions
 export interface AdminUser {
   id: string;

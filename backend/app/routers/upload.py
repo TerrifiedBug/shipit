@@ -520,3 +520,32 @@ async def get_status(upload_id: str):
             "Connection": "keep-alive",
         },
     )
+
+
+@router.delete("/upload/{upload_id}")
+async def delete_upload(upload_id: str):
+    """Delete a pending upload that was abandoned before ingestion started."""
+    upload = db.get_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    if upload["status"] != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail="Can only delete pending uploads"
+        )
+
+    # Clean up uploaded files
+    upload_dir = _get_upload_dir() / upload_id
+    if upload_dir.exists():
+        shutil.rmtree(upload_dir, ignore_errors=True)
+
+    # Remove from cache
+    _upload_cache.pop(upload_id, None)
+
+    # Delete from database
+    deleted = db.delete_pending_upload(upload_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Upload not found or already processed")
+
+    return {"status": "deleted", "upload_id": upload_id}
