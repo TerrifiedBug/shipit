@@ -1,4 +1,4 @@
-# ShipIt ![alt text](image.png)
+# ShipIt
 
 Self-service file ingestion tool for OpenSearch. Upload JSON or CSV files, configure field mappings, and bulk ingest into OpenSearch indices.
 
@@ -11,6 +11,20 @@ Self-service file ingestion tool for OpenSearch. Upload JSON or CSV files, confi
 - Real-time ingestion progress via SSE
 - Upload history with status tracking
 - Dark mode support
+
+## Screenshots
+
+| Upload | Preview |
+|--------|---------|
+| ![Upload](docs/screenshots/upload.png) | ![Preview](docs/screenshots/preview.png) |
+
+| Configure | Progress |
+|-----------|----------|
+| ![Configure](docs/screenshots/configure.png) | ![Progress](docs/screenshots/progress1.png) |
+
+| Progress (continued) |
+|----------------------|
+| ![Progress](docs/screenshots/progress2.png) |
 
 ## Quick Start (Development)
 
