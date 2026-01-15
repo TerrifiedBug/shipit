@@ -1,13 +1,17 @@
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Response, Request, Depends
 from pydantic import BaseModel, EmailStr
 
-from app.services.auth import hash_password, verify_password, create_session_token, verify_session_token
+from app.services.auth import hash_password, verify_password, create_session_token, verify_session_token, hash_api_key
 from app.services.database import (
     create_user,
     get_user_by_email,
     get_user_by_id,
     count_users,
     update_user_last_login,
+    get_api_key_by_hash,
+    update_api_key_last_used,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -25,7 +29,23 @@ class LoginRequest(BaseModel):
 
 
 def get_current_user(request: Request) -> dict | None:
-    """Get current user from session cookie."""
+    """Get current user from session cookie or API key."""
+    # Check for API key first
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        if token.startswith("shipit_"):
+            key_hash = hash_api_key(token)
+            api_key = get_api_key_by_hash(key_hash)
+            if api_key:
+                # Check expiry
+                expires_at = datetime.fromisoformat(api_key["expires_at"])
+                if expires_at > datetime.utcnow():
+                    update_api_key_last_used(api_key["id"])
+                    return get_user_by_id(api_key["user_id"])
+            return None
+
+    # Fall back to session cookie
     session_token = request.cookies.get("session")
     if not session_token:
         return None
