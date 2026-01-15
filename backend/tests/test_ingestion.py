@@ -139,7 +139,7 @@ class TestIngestFile:
 
         mock_bulk_index.return_value = {"success": 2, "failed": []}
         mock_settings.bulk_batch_size = 2  # Small batch size
-        mock_settings.data_dir = "/data"
+        mock_settings.data_dir = str(temp_dir)
 
         result = ingest_file(
             file_path=file_path,
@@ -162,7 +162,7 @@ class TestIngestFile:
 
         mock_bulk_index.return_value = {"success": 2, "failed": []}
         mock_settings.bulk_batch_size = 2  # Small batch size
-        mock_settings.data_dir = "/data"
+        mock_settings.data_dir = str(temp_dir)
 
         progress_calls = []
 

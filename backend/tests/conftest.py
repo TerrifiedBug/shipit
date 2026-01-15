@@ -20,7 +20,10 @@ def db(tmp_path):
 def temp_dir():
     """Create a temporary directory for test files."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        yield Path(tmpdir)
+        # Patch data_dir to allow test files in temp directory
+        from app.config import settings
+        with patch.object(settings, "data_dir", tmpdir):
+            yield Path(tmpdir)
 
 
 @pytest.fixture
