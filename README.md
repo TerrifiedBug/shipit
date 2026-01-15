@@ -237,6 +237,11 @@ API keys inherit the creating user's permissions and are tracked in audit logs.
 
 ## Roadmap (V4+)
 
+### Logfmt Parser
+- Support for logfmt structured logs (`key=value key2="quoted value"`)
+- Popular in Go ecosystem (Heroku, Prometheus, etc.)
+- Auto-detect in `.log` files alongside LTSV and syslog
+
 ### Custom Parsers - Regex/Grok
 - Ingest unstructured log files (plain text)
 - Define regex with named capture groups or select grok patterns
