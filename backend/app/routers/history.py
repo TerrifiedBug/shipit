@@ -21,13 +21,17 @@ async def get_history(
     """List past uploads with optional filtering."""
     uploads = list_uploads(limit=limit, offset=offset, status=status)
 
-    # Get all existing indexes in one call
+    # Get all existing indexes in one call (returns None if permission denied)
     existing_indexes = list_indexes(settings.index_prefix)
 
     # Enrich uploads with index_exists field
     for upload in uploads:
         if upload.get("index_name"):
-            upload["index_exists"] = upload["index_name"] in existing_indexes
+            # None means we couldn't check (permission issue), so leave as None
+            if existing_indexes is None:
+                upload["index_exists"] = None
+            else:
+                upload["index_exists"] = upload["index_name"] in existing_indexes
         else:
             upload["index_exists"] = None
 
