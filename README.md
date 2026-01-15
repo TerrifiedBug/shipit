@@ -52,7 +52,21 @@ docker compose -f compose.dev.yaml up
 
 ## Production Deployment
 
-Build and run the production image:
+### Using Docker Compose (Recommended)
+
+```bash
+docker compose up -d
+```
+
+### Using Docker directly
+
+```bash
+docker run -d -p 80:80 --env-file .env \
+  -v shipit-data:/data \
+  ghcr.io/terrifiedbug/shipit:latest
+```
+
+### Building from source
 
 ```bash
 docker build -t shipit .

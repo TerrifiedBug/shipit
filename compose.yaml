@@ -1,6 +1,6 @@
 services:
   shipit:
-    build: .
+    image: ghcr.io/terrifiedbug/shipit:latest
     ports:
       - "8080:80"
     env_file:
