@@ -19,6 +19,31 @@ MONTH_MAP = {
     "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
 }
 
+# Syslog patterns (compiled once at module level)
+_RFC3164_PATTERN = re.compile(
+    r'^<(\d+)>(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(\S+)\s+(\S+?):\s*(.*)$'
+)
+_RFC5424_PATTERN = re.compile(
+    r'^<(\d+)>(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(?:\[.*?\]\s*)?(.*)$'
+)
+
+
+def _validate_file_path(file_path: Path) -> Path:
+    """Validate file path is within allowed data directory.
+
+    Prevents path traversal attacks by ensuring the resolved path
+    is under the configured data directory.
+    """
+    resolved = file_path.resolve()
+    allowed_dir = Path(settings.data_dir).resolve()
+
+    try:
+        resolved.relative_to(allowed_dir)
+    except ValueError:
+        raise ValueError(f"Access denied: path outside allowed directory")
+
+    return resolved
+
 
 def parse_timestamp(value: Any) -> str | None:
     """
@@ -140,12 +165,19 @@ def stream_records(
     file_format: str,
 ) -> Iterator[dict[str, Any]]:
     """Stream records from a file without loading all into memory."""
+    safe_path = _validate_file_path(file_path)
     if file_format == "json_array":
-        yield from _stream_json_array(file_path)
+        yield from _stream_json_array(safe_path)
     elif file_format == "ndjson":
-        yield from _stream_ndjson(file_path)
+        yield from _stream_ndjson(safe_path)
+    elif file_format == "tsv":
+        yield from _stream_tsv(safe_path)
+    elif file_format == "ltsv":
+        yield from _stream_ltsv(safe_path)
+    elif file_format == "syslog":
+        yield from _stream_syslog(safe_path)
     else:
-        yield from _stream_csv(file_path)
+        yield from _stream_csv(safe_path)
 
 
 def _stream_json_array(file_path: Path) -> Iterator[dict[str, Any]]:
@@ -177,6 +209,101 @@ def _stream_csv(file_path: Path) -> Iterator[dict[str, Any]]:
         reader = csv.DictReader(f, dialect=dialect)
         for row in reader:
             yield dict(row)
+
+
+def _stream_tsv(file_path: Path) -> Iterator[dict[str, Any]]:
+    """Stream records from TSV file.
+
+    Handles both actual tabs and multiple spaces as delimiters.
+    """
+    with open(file_path, "r", encoding="utf-8", newline="") as f:
+        first_line = f.readline()
+        f.seek(0)
+
+        if '\t' in first_line:
+            reader = csv.DictReader(f, delimiter='\t')
+            for row in reader:
+                yield dict(row)
+        else:
+            # Fall back to splitting on 2+ spaces
+            lines = f.readlines()
+            if not lines:
+                return
+
+            header = re.split(r'\s{2,}', lines[0].strip())
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                values = re.split(r'\s{2,}', line)
+                while len(values) < len(header):
+                    values.append('')
+                yield dict(zip(header, values[:len(header)]))
+
+
+def _stream_ltsv(file_path: Path) -> Iterator[dict[str, Any]]:
+    """Stream records from LTSV file (key:value pairs separated by tabs).
+
+    Handles both actual tabs and multiple spaces as delimiters.
+    """
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Detect delimiter: tabs or multiple spaces
+            if '\t' in line:
+                pairs = line.split('\t')
+            else:
+                pairs = re.split(r'\s{2,}', line)
+
+            record = {}
+            for pair in pairs:
+                if ':' in pair:
+                    key, value = pair.split(':', 1)
+                    record[key.strip()] = value.strip()
+            if record:
+                yield record
+
+
+def _stream_syslog(file_path: Path) -> Iterator[dict[str, Any]]:
+    """Stream records from syslog file (RFC 3164 and RFC 5424)."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Try RFC 5424 first
+            match = _RFC5424_PATTERN.match(line)
+            if match:
+                yield {
+                    "priority": match.group(1),
+                    "version": match.group(2),
+                    "timestamp": match.group(3),
+                    "hostname": match.group(4),
+                    "app_name": match.group(5),
+                    "proc_id": match.group(6),
+                    "msg_id": match.group(7),
+                    "message": match.group(8),
+                }
+                continue
+
+            # Try RFC 3164
+            match = _RFC3164_PATTERN.match(line)
+            if match:
+                yield {
+                    "priority": match.group(1),
+                    "timestamp": match.group(2),
+                    "hostname": match.group(3),
+                    "app_name": match.group(4),
+                    "message": match.group(5),
+                }
+                continue
+
+            # Fallback
+            yield {"message": line}
 
 
 def count_records(file_path: Path, file_format: str) -> int:
@@ -212,7 +339,6 @@ def ingest_file(
     field_mappings: dict[str, str] | None = None,
     excluded_fields: list[str] | None = None,
     timestamp_field: str | None = None,
-    batch_size: int = 1000,
     progress_callback: Callable[[int, int, int], None] | None = None,
 ) -> IngestionResult:
     """
@@ -225,7 +351,6 @@ def ingest_file(
         field_mappings: Optional dict mapping original field names to new names
         excluded_fields: Optional list of fields to exclude
         timestamp_field: Optional field to parse as timestamp and map to @timestamp
-        batch_size: Number of records per bulk request
         progress_callback: Optional callback(processed, success, failed) for progress updates
 
     Returns:
@@ -248,7 +373,7 @@ def ingest_file(
         )
         batch.append(mapped_record)
 
-        if len(batch) >= batch_size:
+        if len(batch) >= settings.bulk_batch_size:
             # Flush batch
             _flush_batch(batch, index_name, result)
             batch = []

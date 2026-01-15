@@ -132,19 +132,23 @@ def get_connection():
 
 def create_upload(
     upload_id: str,
-    filename: str,
-    file_size: int,
+    filenames: list[str],
+    file_sizes: list[int],
     file_format: str,
     user_id: str | None = None,
 ) -> dict[str, Any]:
-    """Create a new upload record."""
+    """Create a new upload record for one or more files."""
+    # Store filenames as JSON array, total size
+    filename_json = json.dumps(filenames)
+    total_size = sum(file_sizes)
+
     with get_connection() as conn:
         conn.execute(
             """
             INSERT INTO uploads (id, filename, file_size, file_format, status, user_id)
             VALUES (?, ?, ?, ?, 'pending', ?)
             """,
-            (upload_id, filename, file_size, file_format, user_id),
+            (upload_id, filename_json, total_size, file_format, user_id),
         )
     return get_upload(upload_id)
 
@@ -194,6 +198,16 @@ def mark_index_deleted(index_name: str) -> int:
             (index_name,),
         )
         return cursor.rowcount
+
+
+def delete_pending_upload(upload_id: str) -> bool:
+    """Delete a pending upload record. Only allows deletion of pending uploads."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM uploads WHERE id = ? AND status = 'pending'",
+            (upload_id,),
+        )
+        return cursor.rowcount > 0
 
 
 def start_ingestion(
@@ -290,6 +304,20 @@ def list_uploads(
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     """Convert a database row to a dictionary."""
     result = dict(row)
+
+    # Parse filename - could be JSON array (new) or plain string (old)
+    if result.get("filename"):
+        try:
+            parsed = json.loads(result["filename"])
+            if isinstance(parsed, list):
+                result["filenames"] = parsed
+                # Keep filename as display string for backward compat
+                result["filename"] = ", ".join(parsed) if len(parsed) > 1 else parsed[0]
+            else:
+                result["filenames"] = [result["filename"]]
+        except json.JSONDecodeError:
+            # Old format - single filename string
+            result["filenames"] = [result["filename"]]
 
     # Parse JSON fields
     if result.get("field_mappings"):

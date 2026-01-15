@@ -352,8 +352,18 @@ export function Users({ onClose }: UsersProps) {
                     type="text"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    disabled={editingUser.auth_type !== 'local'}
+                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white ${
+                      editingUser.auth_type !== 'local'
+                        ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed'
+                        : 'bg-white dark:bg-gray-700'
+                    }`}
                   />
+                  {editingUser.auth_type !== 'local' && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      Name is managed by {editingUser.auth_type.toUpperCase()} and updated on login.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="flex items-center gap-2 cursor-pointer">

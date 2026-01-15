@@ -144,8 +144,9 @@ export interface FieldInfo {
 export interface UploadResponse {
   upload_id: string;
   filename: string;
+  filenames: string[];
   file_size: number;
-  file_format: 'json_array' | 'ndjson' | 'csv';
+  file_format: 'json_array' | 'ndjson' | 'csv' | 'tsv' | 'ltsv' | 'syslog';
   preview: Record<string, unknown>[];
   fields: FieldInfo[];
 }
@@ -158,9 +159,9 @@ export interface PreviewResponse {
   fields: FieldInfo[];
 }
 
-export async function uploadFile(file: File): Promise<UploadResponse> {
+export async function uploadFiles(files: File[]): Promise<UploadResponse> {
   const formData = new FormData();
-  formData.append('file', file);
+  files.forEach(file => formData.append('files', file));
 
   const response = await fetch(`${API_BASE}/api/upload`, {
     method: 'POST',
@@ -243,6 +244,7 @@ export interface UploadRecord {
   created_at: string;
   error_message: string | null;
   index_deleted: number;
+  index_exists: boolean | null;
   user_name: string | null;
   user_email: string | null;
 }
@@ -353,6 +355,17 @@ export async function deleteIndex(indexName: string): Promise<void> {
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to delete index');
+  }
+}
+
+export async function deletePendingUpload(uploadId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/upload/${uploadId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  // Silently ignore errors - upload may have already been processed
+  if (!response.ok) {
+    console.warn('Failed to delete pending upload:', uploadId);
   }
 }
 

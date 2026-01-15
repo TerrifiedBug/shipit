@@ -123,6 +123,23 @@ def delete_index(index_name: str) -> bool:
         return False
 
 
+def list_indexes(prefix: str) -> set[str] | None:
+    """Get set of all index names matching prefix.
+
+    Returns None if unable to check (permission error, connection issue).
+    Returns empty set if no indexes exist.
+    """
+    try:
+        client = get_client()
+        response = client.cat.indices(index=f"{prefix}*", format="json")
+        return {idx["index"] for idx in response}
+    except Exception as e:
+        # Return None to indicate "unknown" - could be permission issue
+        import logging
+        logging.warning(f"Failed to list indexes with prefix '{prefix}': {e}")
+        return None
+
+
 def validate_index_name(index_name: str) -> tuple[bool, str]:
     """
     Validate that an index name is valid and has the required prefix.

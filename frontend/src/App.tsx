@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Upload } from './components/Upload';
 import { Preview } from './components/Preview';
 import { Configure } from './components/Configure';
@@ -8,7 +8,7 @@ import { Login } from './components/Login';
 import { ApiKeys } from './components/ApiKeys';
 import { Users } from './components/Users';
 import { PasswordChangeModal } from './components/PasswordChangeModal';
-import { IngestResponse, UploadResponse } from './api/client';
+import { IngestResponse, UploadResponse, deletePendingUpload } from './api/client';
 import { useTheme } from './contexts/ThemeContext';
 import { useAuth } from './contexts/AuthContext';
 
@@ -128,6 +128,28 @@ function App() {
   const [showApiKeys, setShowApiKeys] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
 
+  // Track pending upload for cleanup on tab close
+  const pendingUploadRef = useRef<string | null>(null);
+
+  // Update ref when uploadData changes (only track if not yet ingested)
+  useEffect(() => {
+    pendingUploadRef.current = uploadData && !ingestResult ? uploadData.upload_id : null;
+  }, [uploadData, ingestResult]);
+
+  // Clean up pending upload on tab/window close
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (pendingUploadRef.current) {
+        // Use sendBeacon for reliable delivery on page unload
+        const url = `${import.meta.env.VITE_API_URL || ''}/api/upload/${pendingUploadRef.current}/abandon`;
+        navigator.sendBeacon(url);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
   // Show loading spinner while checking auth
   if (loading) {
     return <LoadingSpinner />;
@@ -162,6 +184,10 @@ function App() {
   };
 
   const handleReset = () => {
+    // If abandoning before ingestion started, delete the pending upload
+    if (uploadData && !ingestResult) {
+      deletePendingUpload(uploadData.upload_id);
+    }
     setUploadData(null);
     setIngestResult(null);
     setState('upload');

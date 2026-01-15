@@ -29,8 +29,8 @@ class TestDatabase:
         """create_upload should insert a new record."""
         upload = db.create_upload(
             upload_id="test-123",
-            filename="test.json",
-            file_size=1024,
+            filenames=["test.json"],
+            file_sizes=[1024],
             file_format="json_array",
         )
 
@@ -44,8 +44,8 @@ class TestDatabase:
         """get_upload should retrieve an existing record."""
         db.create_upload(
             upload_id="test-456",
-            filename="data.csv",
-            file_size=2048,
+            filenames=["data.csv"],
+            file_sizes=[2048],
             file_format="csv",
         )
 
@@ -62,8 +62,8 @@ class TestDatabase:
         """update_upload should modify existing fields."""
         db.create_upload(
             upload_id="test-789",
-            filename="test.json",
-            file_size=1024,
+            filenames=["test.json"],
+            file_sizes=[1024],
             file_format="json_array",
         )
 
@@ -76,8 +76,8 @@ class TestDatabase:
         """start_ingestion should update all ingestion fields."""
         db.create_upload(
             upload_id="test-ingest",
-            filename="test.json",
-            file_size=1024,
+            filenames=["test.json"],
+            file_sizes=[1024],
             file_format="json_array",
         )
 
@@ -102,8 +102,8 @@ class TestDatabase:
         """update_progress should update counts."""
         db.create_upload(
             upload_id="test-progress",
-            filename="test.json",
-            file_size=1024,
+            filenames=["test.json"],
+            file_sizes=[1024],
             file_format="json_array",
         )
 
@@ -117,8 +117,8 @@ class TestDatabase:
         """complete_ingestion should mark as completed."""
         db.create_upload(
             upload_id="test-complete",
-            filename="test.json",
-            file_size=1024,
+            filenames=["test.json"],
+            file_sizes=[1024],
             file_format="json_array",
         )
 
@@ -138,8 +138,8 @@ class TestDatabase:
         """complete_ingestion with error should mark as failed."""
         db.create_upload(
             upload_id="test-failed",
-            filename="test.json",
-            file_size=1024,
+            filenames=["test.json"],
+            file_sizes=[1024],
             file_format="json_array",
         )
 
@@ -158,8 +158,8 @@ class TestDatabase:
         for i in range(5):
             db.create_upload(
                 upload_id=f"list-test-{i}",
-                filename=f"file{i}.json",
-                file_size=1024,
+                filenames=[f"file{i}.json"],
+                file_sizes=[1024],
                 file_format="json_array",
             )
 
@@ -170,15 +170,15 @@ class TestDatabase:
         """list_uploads should filter by status."""
         db.create_upload(
             upload_id="pending-1",
-            filename="pending.json",
-            file_size=1024,
+            filenames=["pending.json"],
+            file_sizes=[1024],
             file_format="json_array",
         )
 
         db.create_upload(
             upload_id="completed-1",
-            filename="completed.json",
-            file_size=1024,
+            filenames=["completed.json"],
+            file_sizes=[1024],
             file_format="json_array",
         )
         db.complete_ingestion("completed-1", success_count=100, failure_count=0)
@@ -202,8 +202,8 @@ class TestDatabase:
 
         upload = db.create_upload(
             upload_id="user-upload-1",
-            filename="test.json",
-            file_size=1024,
+            filenames=["test.json"],
+            file_sizes=[1024],
             file_format="json_array",
             user_id=user["id"],
         )
@@ -215,8 +215,8 @@ class TestDatabase:
         """create_upload should allow None user_id for backward compatibility."""
         upload = db.create_upload(
             upload_id="no-user-upload",
-            filename="test.json",
-            file_size=1024,
+            filenames=["test.json"],
+            file_sizes=[1024],
             file_format="json_array",
         )
 

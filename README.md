@@ -1,13 +1,14 @@
 # <img src="docs/logo.png" width="32" height="32" alt="ShipIt"> ShipIt
 
-Self-service file ingestion tool for OpenSearch. Designed for ad-hoc data uploads during investigations, troubleshooting, and analysis - quickly get JSON, CSV, or log data into OpenSearch without writing ingestion pipelines.
+Self-service file ingestion tool for OpenSearch. Designed for ad-hoc data uploads during investigations, troubleshooting, and analysis - quickly get JSON, CSV, TSV, LTSV, or syslog data into OpenSearch without writing ingestion pipelines.
 
 ## Features
 
 - **Authentication**: Local users, OIDC SSO, and API keys for automation
 - **User Management**: Admin UI for creating/editing/deleting users
 - **OIDC SSO**: Enterprise single sign-on with auto-provisioning and group-based roles
-- **Drag-and-drop upload**: JSON array, NDJSON, CSV formats
+- **Drag-and-drop upload**: JSON, NDJSON, CSV, TSV, LTSV, and syslog formats
+- **Multi-file upload**: Combine multiple files of the same format into a single index
 - **Auto-detection**: File format and field type inference
 - **Field mapping**: Rename, exclude, and configure fields before ingestion
 - **Timestamp parsing**: Automatic UTC conversion for various formats
@@ -79,6 +80,7 @@ docker run -p 80:80 --env-file .env shipit
 | `SESSION_DURATION_HOURS` | `8` | How long user sessions remain valid |
 | `APP_URL` | - | Public URL for CORS and OIDC callbacks (e.g., `https://shipit.example.com`) |
 | `FAILURE_FILE_RETENTION_HOURS` | `24` | How long to keep failed record files |
+| `BULK_BATCH_SIZE` | `1000` | Number of records per bulk insert to OpenSearch |
 
 ### OIDC SSO (Optional)
 
@@ -98,6 +100,7 @@ The OpenSearch user needs these permissions:
 - `cluster_monitor` - Required for health check endpoint
 - `crud` on `shipit-*` indices - Read/write documents
 - `create_index` on `shipit-*` indices - Create new indices
+- `indices:monitor/stats` and `indices:monitor/settings/get` on `shipit-*` indices - Required for index existence check in History
 - `delete_index` on `shipit-*` indices - Required for "Delete Index" option when cancelling ingestion (optional)
 
 Example OpenSearch security role:
@@ -107,7 +110,7 @@ Example OpenSearch security role:
   "cluster_permissions": ["cluster_monitor"],
   "index_permissions": [{
     "index_patterns": ["shipit-*"],
-    "allowed_actions": ["crud", "create_index", "delete_index"]
+    "allowed_actions": ["crud", "create_index", "delete_index", "indices:monitor/stats", "indices:monitor/settings/get"]
   }]
 }
 ```
@@ -117,6 +120,9 @@ Example OpenSearch security role:
 - **JSON Array**: `[{"field": "value"}, ...]`
 - **NDJSON**: One JSON object per line
 - **CSV**: Comma or semicolon delimited with header row
+- **TSV**: Tab-separated values with header row
+- **LTSV**: Labeled Tab-separated Values (`label:value\tlabel:value`)
+- **Syslog**: RFC 3164 and RFC 5424 syslog message formats
 
 ## Timestamp Handling
 
@@ -203,20 +209,18 @@ API keys inherit the creating user's permissions and are tracked in audit logs.
 - Password change enforcement for admin-created users
 
 ### History & Index Management
-- Expandable history rows showing user, field mappings, timestamps, errors
+- Expandable history rows showing user, field mappings (if renamed), timestamps, errors
 - Download failed records directly from Result page
 - Delete index button in History with confirmation
 - Visual indicator when index has been deleted
 - APP_URL configuration for proxy/DNS deployments
 
-## Roadmap (V3)
-
-Planned features for the next release:
+## What's New in V3
 
 ### Index Existence Check
-- Detect when indexes are deleted externally (outside ShipIt)
-- History page shows visual indicator for missing indexes
-- Distinguish "deleted via ShipIt" from "deleted externally"
+- Detects when indexes are deleted externally (outside ShipIt)
+- History page shows "(missing)" indicator for externally-deleted indexes
+- Distinguishes "deleted via ShipIt" from "deleted externally"
 
 ### Configurable Batch Size
 - New `BULK_BATCH_SIZE` environment variable (default: 1000)
@@ -224,15 +228,25 @@ Planned features for the next release:
 
 ### Multi-File Upload
 - Select multiple files to combine into a single index
-- All files must be same format (JSON, CSV, etc.)
-- Union of fields across files with conflict detection
+- All files must be same format (JSON, CSV, TSV, etc.)
+- Duplicate filename detection prevents overwrites
 
 ### Additional File Parsers
-- **TSV**: Tab-separated values
-- **LTSV**: Labeled Tab-separated Values (common in web server logs)
+- **TSV**: Tab-separated values with header row
+- **LTSV**: Labeled Tab-separated Values (`label:value` pairs)
 - **Syslog**: RFC 3164 and RFC 5424 syslog message formats
 
 ## Roadmap (V4+)
+
+### Elasticsearch Support
+- Add compatibility with Elasticsearch clusters
+- Auto-detect OpenSearch vs Elasticsearch from cluster info
+- Use appropriate client library based on target
+
+### Logfmt Parser
+- Support for logfmt structured logs (`key=value key2="quoted value"`)
+- Popular in Go ecosystem (Heroku, Prometheus, etc.)
+- Auto-detect in `.log` files alongside LTSV and syslog
 
 ### Custom Parsers - Regex/Grok
 - Ingest unstructured log files (plain text)
@@ -243,3 +257,9 @@ Planned features for the next release:
 - CSV columns are always strings; convert to numbers, booleans, dates
 - Per-field type dropdown in Configure step
 - Custom date format specification
+
+### Content-Based Format Detection
+- Move away from file extension reliance for format detection
+- Try multiple parsers and use the one that successfully parses the content
+- Would improve handling of `.log` files and extensionless files
+- Challenging: need to define "successful parse" heuristics

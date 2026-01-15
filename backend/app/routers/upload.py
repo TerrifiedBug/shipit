@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.config import settings
@@ -44,117 +44,203 @@ def _get_failures_dir() -> Path:
     return failures_dir
 
 
-@router.post("/upload", response_model=UploadResponse)
-async def upload_file(file: UploadFile, request: Request):
-    """Upload a file and return preview data."""
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename provided")
+def _sanitize_filename(filename: str | None) -> str:
+    """Sanitize filename to prevent path traversal attacks.
 
-    # Validate file extension
-    filename_lower = file.filename.lower()
-    if not (filename_lower.endswith(".json") or filename_lower.endswith(".csv")):
-        raise HTTPException(
-            status_code=400, detail="Unsupported file type. Only .json and .csv files are supported."
-        )
+    Strips any directory components (e.g., '../', '/etc/') and returns
+    only the base filename.
+    """
+    if not filename:
+        return ""
+    # Path.name extracts just the filename, stripping any directory components
+    return Path(filename).name
+
+
+def _validate_upload_id(upload_id: str) -> str:
+    """Validate upload_id is a valid UUID to prevent path traversal attacks.
+
+    Returns the canonical UUID string representation.
+    Raises HTTPException if invalid.
+    """
+    try:
+        # Parse and re-serialize to get canonical form
+        return str(uuid.UUID(upload_id))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Invalid upload ID format")
+
+
+@router.post("/upload", response_model=UploadResponse)
+async def upload_files(files: list[UploadFile] = File(...), request: Request = None):
+    """Upload one or more files and return preview data."""
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    # Sanitize and validate all filenames
+    valid_extensions = ('.json', '.csv', '.tsv', '.ltsv', '.log')
+    sanitized_filenames: list[str] = []
+
+    for file in files:
+        # Sanitize filename to prevent path traversal
+        safe_name = _sanitize_filename(file.filename)
+        if not safe_name:
+            raise HTTPException(status_code=400, detail="No filename provided")
+        if not safe_name.lower().endswith(valid_extensions):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type: {safe_name}. Supported: JSON, CSV, TSV, LTSV, LOG"
+            )
+        sanitized_filenames.append(safe_name)
+
+    # Check for duplicate filenames
+    seen_filenames = set()
+    for safe_name in sanitized_filenames:
+        if safe_name in seen_filenames:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Duplicate filename: {safe_name}"
+            )
+        seen_filenames.add(safe_name)
 
     upload_id = str(uuid.uuid4())
-    upload_dir = _get_upload_dir()
-    file_path = upload_dir / f"{upload_id}_{file.filename}"
+    upload_dir = _get_upload_dir() / upload_id  # Create subdirectory for this upload
+    upload_dir.mkdir(parents=True, exist_ok=True)
 
-    # Stream file to disk
+    saved_files: list[Path] = []
+    file_sizes: list[int] = []
+    total_size = 0
+
     try:
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-    finally:
-        await file.close()
+        for file, safe_name in zip(files, sanitized_filenames):
+            file_path = upload_dir / safe_name
+            with open(file_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+            await file.close()
 
-    # Get file size
-    file_size = file_path.stat().st_size
+            size = file_path.stat().st_size
+            saved_files.append(file_path)
+            file_sizes.append(size)
+            total_size += size
 
-    # Check file size limit
-    max_size_bytes = settings.max_file_size_mb * 1024 * 1024
-    if file_size > max_size_bytes:
-        file_path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=413,
-            detail=f"File exceeds maximum size of {settings.max_file_size_mb} MB"
+        # Check total size limit
+        max_size_bytes = settings.max_file_size_mb * 1024 * 1024
+        if total_size > max_size_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Total file size exceeds maximum of {settings.max_file_size_mb} MB"
+            )
+
+        # Detect format from first file
+        file_format = detect_format(saved_files[0])
+
+        # Verify all files have same format
+        for fp in saved_files[1:]:
+            if detect_format(fp) != file_format:
+                raise HTTPException(
+                    status_code=400,
+                    detail="All files must be the same format"
+                )
+
+        # Get preview from each file (5 records each for multi-file, 100 for single)
+        preview_limit = 5 if len(saved_files) > 1 else 100
+        preview_records: list[dict] = []
+
+        for fp in saved_files:
+            records = parse_preview(fp, file_format, limit=preview_limit)
+            preview_records.extend(records)
+
+        fields = infer_fields(preview_records)
+
+        # Create database record (use sanitized filenames)
+        user = getattr(request.state, "user", None) if request else None
+        db.create_upload(
+            upload_id=upload_id,
+            filenames=sanitized_filenames,
+            file_sizes=file_sizes,
+            file_format=file_format,
+            user_id=user["id"] if user else None,
         )
 
-    # Detect format and parse preview
-    try:
-        file_format = detect_format(file_path)
-        preview = parse_preview(file_path, file_format, limit=100)
-        fields = infer_fields(preview)
+        # Cache file paths (all of them)
+        _upload_cache[upload_id] = {
+            "file_paths": [str(fp) for fp in saved_files],
+            "preview": preview_records,
+            "fields": fields,
+        }
+    except HTTPException:
+        # Clean up on error
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise
     except Exception as e:
-        # Clean up file on parse error
-        file_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
-
-    # Create database record
-    user = getattr(request.state, "user", None)
-    db.create_upload(
-        upload_id=upload_id,
-        filename=file.filename,
-        file_size=file_size,
-        file_format=file_format,
-        user_id=user["id"] if user else None,
-    )
-
-    # Cache file path and preview data
-    _upload_cache[upload_id] = {
-        "file_path": str(file_path),
-        "preview": preview,
-        "fields": fields,
-    }
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=f"Failed to process files: {str(e)}")
 
     return UploadResponse(
         upload_id=upload_id,
-        filename=file.filename,
-        file_size=file_size,
+        filename=", ".join(sanitized_filenames) if len(sanitized_filenames) > 1 else sanitized_filenames[0],
+        filenames=sanitized_filenames,
+        file_size=total_size,
         file_format=file_format,
-        preview=preview,
+        preview=preview_records[:100],  # Limit preview in response
         fields=[FieldInfo(**f) for f in fields],
     )
 
 
 @router.get("/upload/{upload_id}/preview", response_model=PreviewResponse)
 async def get_preview(upload_id: str):
-    """Get preview data for a previously uploaded file."""
-    upload = db.get_upload(upload_id)
+    """Get preview data for previously uploaded file(s)."""
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
     # Get from cache or re-parse
-    cache = _upload_cache.get(upload_id)
+    cache = _upload_cache.get(safe_id)
     if cache:
         preview = cache["preview"]
         fields = cache["fields"]
     else:
         # Re-parse if not in cache (e.g., after server restart)
-        file_path = Path(_get_upload_dir() / f"{upload_id}_{upload['filename']}")
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="Uploaded file no longer exists")
+        # Files are stored in a subdirectory named by upload_id
+        upload_dir = _get_upload_dir() / safe_id
+        filenames = upload.get("filenames", [upload["filename"]])
 
-        preview = parse_preview(file_path, upload["file_format"], limit=100)
+        if not upload_dir.exists():
+            raise HTTPException(status_code=404, detail="Uploaded files no longer exist")
+
+        # Parse preview from all files
+        preview_limit = 5 if len(filenames) > 1 else 100
+        preview = []
+        file_paths = []
+
+        for filename in filenames:
+            file_path = upload_dir / filename
+            if file_path.exists():
+                records = parse_preview(file_path, upload["file_format"], limit=preview_limit)
+                preview.extend(records)
+                file_paths.append(str(file_path))
+
+        if not file_paths:
+            raise HTTPException(status_code=404, detail="Uploaded files no longer exist")
+
         fields = infer_fields(preview)
-        _upload_cache[upload_id] = {
-            "file_path": str(file_path),
+        _upload_cache[safe_id] = {
+            "file_paths": file_paths,
             "preview": preview,
             "fields": fields,
         }
 
     return PreviewResponse(
-        upload_id=upload_id,
+        upload_id=safe_id,
         filename=upload["filename"],
         file_format=upload["file_format"],
-        preview=preview,
+        preview=preview[:100],
         fields=[FieldInfo(**f) for f in fields],
     )
 
 
 def _run_ingestion_task(
     upload_id: str,
-    file_path: Path,
+    file_paths: list[Path],
     file_format: str,
     index_name: str,
     field_mappings: dict,
@@ -163,56 +249,79 @@ def _run_ingestion_task(
 ):
     """Run ingestion in a background thread."""
     start_time = time.time()
+    total_processed = 0
+    total_success = 0
+    total_failed = 0
+    all_failed_records = []
 
     def progress_callback(processed: int, success: int, failed: int):
+        """
+        Progress callback receives cumulative values for the CURRENT file.
+        We add these to totals from previously completed files.
+        """
         # Check for cancellation
         if _cancellation_flags.get(upload_id, False):
             raise Exception("Ingestion cancelled by user")
 
+        # Calculate current progress: completed files + current file progress
+        current_processed = total_processed + processed
+        current_success = total_success + success
+        current_failed = total_failed + failed
+
         elapsed = time.time() - start_time
-        rps = processed / elapsed if elapsed > 0 else 0
+        rps = current_processed / elapsed if elapsed > 0 else 0
         total = _ingestion_progress[upload_id]["total"]
-        remaining = (total - processed) / rps if rps > 0 else 0
+        remaining = (total - current_processed) / rps if rps > 0 else 0
 
         _ingestion_progress[upload_id].update({
-            "processed": processed,
-            "success": success,
-            "failed": failed,
+            "processed": current_processed,
+            "success": current_success,
+            "failed": current_failed,
             "elapsed_seconds": elapsed,
             "records_per_second": rps,
             "estimated_remaining_seconds": remaining,
         })
-        db.update_progress(upload_id, success, failed)
+        db.update_progress(upload_id, current_success, current_failed)
 
     try:
-        result = ingest_file(
-            file_path=file_path,
-            file_format=file_format,
-            index_name=index_name,
-            field_mappings=field_mappings,
-            excluded_fields=excluded_fields,
-            timestamp_field=timestamp_field,
-            progress_callback=progress_callback,
-        )
+        # Process each file
+        for file_path in file_paths:
+            result = ingest_file(
+                file_path=file_path,
+                file_format=file_format,
+                index_name=index_name,
+                field_mappings=field_mappings,
+                excluded_fields=excluded_fields,
+                timestamp_field=timestamp_field,
+                progress_callback=progress_callback,
+            )
+
+            # Accumulate totals after each file
+            total_processed += result.processed
+            total_success += result.success
+            total_failed += result.failed
+
+            if result.failed_records:
+                all_failed_records.extend(result.failed_records)
 
         # Save failed records to file if any
-        if result.failed_records:
+        if all_failed_records:
             failures_file = _get_failures_dir() / f"{upload_id}.json"
             with open(failures_file, "w") as f:
-                json.dump(result.failed_records, f, indent=2)
+                json.dump(all_failed_records, f, indent=2)
 
         # Complete ingestion
         db.complete_ingestion(
             upload_id=upload_id,
-            success_count=result.success,
-            failure_count=result.failed,
+            success_count=total_success,
+            failure_count=total_failed,
         )
 
         elapsed = time.time() - start_time
         _ingestion_progress[upload_id].update({
-            "processed": result.processed,
-            "success": result.success,
-            "failed": result.failed,
+            "processed": total_processed,
+            "success": total_success,
+            "failed": total_failed,
             "elapsed_seconds": elapsed,
             "completed": True,
         })
@@ -232,16 +341,19 @@ def _run_ingestion_task(
         _ingestion_progress[upload_id]["cancelled"] = is_cancelled
 
     finally:
-        # Clean up uploaded file
-        file_path.unlink(missing_ok=True)
+        # Clean up uploaded files (remove entire upload directory)
+        if file_paths:
+            upload_dir = file_paths[0].parent
+            shutil.rmtree(upload_dir, ignore_errors=True)
         _upload_cache.pop(upload_id, None)
         _cancellation_flags.pop(upload_id, None)
 
 
 @router.post("/upload/{upload_id}/ingest")
 async def start_ingest(upload_id: str, request: IngestRequest):
-    """Start ingestion of an uploaded file into OpenSearch (async)."""
-    upload = db.get_upload(upload_id)
+    """Start ingestion of uploaded file(s) into OpenSearch (async)."""
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
@@ -253,25 +365,30 @@ async def start_ingest(upload_id: str, request: IngestRequest):
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
 
-    # Get file path
-    cache = _upload_cache.get(upload_id)
-    if cache:
-        file_path = Path(cache["file_path"])
+    # Get file paths (multi-file upload)
+    cache = _upload_cache.get(safe_id)
+    if cache and "file_paths" in cache:
+        file_paths = [Path(fp) for fp in cache["file_paths"]]
     else:
-        file_path = _get_upload_dir() / f"{upload_id}_{upload['filename']}"
+        # Fallback: reconstruct from database
+        upload_dir = _get_upload_dir() / safe_id
+        filenames = upload.get("filenames", [upload["filename"]])
+        file_paths = [upload_dir / fn for fn in filenames]
 
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Uploaded file no longer exists")
+    # Verify files exist
+    existing_paths = [fp for fp in file_paths if fp.exists()]
+    if not existing_paths:
+        raise HTTPException(status_code=404, detail="Uploaded files no longer exist")
 
     # Build full index name with prefix
     full_index_name = f"{settings.index_prefix}{request.index_name}"
 
-    # Count total records for progress tracking
-    total_records = count_records(file_path, upload["file_format"])
+    # Count total records across all files for progress tracking
+    total_records = sum(count_records(fp, upload["file_format"]) for fp in existing_paths)
 
     # Update database with ingestion config
     db.start_ingestion(
-        upload_id=upload_id,
+        upload_id=safe_id,
         index_name=full_index_name,
         timestamp_field=request.timestamp_field,
         field_mappings=request.field_mappings,
@@ -280,7 +397,7 @@ async def start_ingest(upload_id: str, request: IngestRequest):
     )
 
     # Initialize progress tracking
-    _ingestion_progress[upload_id] = {
+    _ingestion_progress[safe_id] = {
         "processed": 0,
         "success": 0,
         "failed": 0,
@@ -296,8 +413,8 @@ async def start_ingest(upload_id: str, request: IngestRequest):
     thread = threading.Thread(
         target=_run_ingestion_task,
         args=(
-            upload_id,
-            file_path,
+            safe_id,
+            existing_paths,
             upload["file_format"],
             full_index_name,
             request.field_mappings,
@@ -310,7 +427,7 @@ async def start_ingest(upload_id: str, request: IngestRequest):
 
     # Return immediately with status
     return {
-        "upload_id": upload_id,
+        "upload_id": safe_id,
         "index_name": full_index_name,
         "status": "in_progress",
         "total_records": total_records,
@@ -320,7 +437,8 @@ async def start_ingest(upload_id: str, request: IngestRequest):
 @router.post("/upload/{upload_id}/cancel")
 async def cancel_ingest(upload_id: str, delete_index: bool = False):
     """Cancel an in-progress ingestion."""
-    upload = db.get_upload(upload_id)
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
@@ -328,12 +446,12 @@ async def cancel_ingest(upload_id: str, delete_index: bool = False):
         raise HTTPException(status_code=400, detail="Ingestion is not in progress")
 
     # Set cancellation flag
-    _cancellation_flags[upload_id] = True
+    _cancellation_flags[safe_id] = True
 
     # Wait briefly for ingestion thread to notice cancellation
     for _ in range(10):
         await asyncio.sleep(0.1)
-        progress = _ingestion_progress.get(upload_id)
+        progress = _ingestion_progress.get(safe_id)
         if progress and progress.get("cancelled"):
             break
 
@@ -344,11 +462,11 @@ async def cancel_ingest(upload_id: str, delete_index: bool = False):
         index_deleted = os_delete_index(upload["index_name"])
         if index_deleted:
             # Mark in database that index was deleted
-            db.update_upload(upload_id, index_deleted=1)
+            db.update_upload(safe_id, index_deleted=1)
 
     return {
         "status": "cancelled",
-        "upload_id": upload_id,
+        "upload_id": safe_id,
         "index_deleted": index_deleted if delete_index else None,
     }
 
@@ -356,7 +474,8 @@ async def cancel_ingest(upload_id: str, delete_index: bool = False):
 @router.get("/upload/{upload_id}/status")
 async def get_status(upload_id: str):
     """SSE endpoint for live ingestion progress."""
-    upload = db.get_upload(upload_id)
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
@@ -365,7 +484,7 @@ async def get_status(upload_id: str):
 
         while True:
             # Get current progress
-            progress = _ingestion_progress.get(upload_id)
+            progress = _ingestion_progress.get(safe_id)
 
             if progress:
                 if progress["processed"] != last_processed or progress.get("error") or progress.get("completed"):
@@ -393,7 +512,7 @@ async def get_status(upload_id: str):
 
             # Check database for status if no active progress
             else:
-                current = db.get_upload(upload_id)
+                current = db.get_upload(safe_id)
                 if current and current["status"] in ("completed", "failed"):
                     event_data = {
                         "processed": current["total_records"] or 0,
@@ -418,3 +537,39 @@ async def get_status(upload_id: str):
             "Connection": "keep-alive",
         },
     )
+
+
+@router.post("/upload/{upload_id}/abandon")
+async def abandon_upload(upload_id: str):
+    """Abandon a pending upload (used by sendBeacon on page unload)."""
+    return await delete_upload(upload_id)
+
+
+@router.delete("/upload/{upload_id}")
+async def delete_upload(upload_id: str):
+    """Delete a pending upload that was abandoned before ingestion started."""
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    if upload["status"] != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail="Can only delete pending uploads"
+        )
+
+    # Clean up uploaded files
+    upload_dir = _get_upload_dir() / safe_id
+    if upload_dir.exists():
+        shutil.rmtree(upload_dir, ignore_errors=True)
+
+    # Remove from cache
+    _upload_cache.pop(safe_id, None)
+
+    # Delete from database
+    deleted = db.delete_pending_upload(safe_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Upload not found or already processed")
+
+    return {"status": "deleted", "upload_id": safe_id}

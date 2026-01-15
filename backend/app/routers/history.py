@@ -1,12 +1,13 @@
-import json
+import uuid
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 
 from app.config import settings
 from app.services.database import get_upload, list_uploads
+from app.services.opensearch import list_indexes
 
 router = APIRouter(tags=["history"])
 
@@ -19,13 +20,41 @@ async def get_history(
 ):
     """List past uploads with optional filtering."""
     uploads = list_uploads(limit=limit, offset=offset, status=status)
+
+    # Get all existing indexes in one call (returns None if permission denied)
+    existing_indexes = list_indexes(settings.index_prefix)
+
+    # Enrich uploads with index_exists field
+    for upload in uploads:
+        if upload.get("index_name"):
+            # None means we couldn't check (permission issue), so leave as None
+            if existing_indexes is None:
+                upload["index_exists"] = None
+            else:
+                upload["index_exists"] = upload["index_name"] in existing_indexes
+        else:
+            upload["index_exists"] = None
+
     return {"uploads": uploads, "limit": limit, "offset": offset}
+
+
+def _validate_upload_id(upload_id: str) -> str:
+    """Validate upload_id is a valid UUID to prevent path traversal attacks.
+
+    Returns the canonical UUID string representation.
+    Raises HTTPException if invalid.
+    """
+    try:
+        return str(uuid.UUID(upload_id))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Invalid upload ID format")
 
 
 @router.get("/upload/{upload_id}/failures")
 async def download_failures(upload_id: str):
     """Download failed records for an upload as JSON."""
-    upload = get_upload(upload_id)
+    safe_id = _validate_upload_id(upload_id)
+    upload = get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
@@ -33,7 +62,7 @@ async def download_failures(upload_id: str):
         raise HTTPException(status_code=404, detail="No failed records")
 
     # Check for failures file
-    failures_file = Path(settings.data_dir) / "failures" / f"{upload_id}.json"
+    failures_file = Path(settings.data_dir) / "failures" / f"{safe_id}.json"
     if not failures_file.exists():
         raise HTTPException(
             status_code=404,

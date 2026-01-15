@@ -1,21 +1,73 @@
 import csv
 import json
+import re
 from pathlib import Path
 from typing import Literal
 
 import ijson
 
-FileFormat = Literal["json_array", "ndjson", "csv"]
+from app.config import settings
+
+FileFormat = Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog"]
+
+
+def _validate_file_path(file_path: Path) -> Path:
+    """Validate file path is within allowed data directory.
+
+    Prevents path traversal attacks by ensuring the resolved path
+    is under the configured data directory.
+    """
+    # Resolve to absolute path (resolves symlinks and ..)
+    resolved = file_path.resolve()
+    allowed_dir = Path(settings.data_dir).resolve()
+
+    # Check path is under allowed directory
+    try:
+        resolved.relative_to(allowed_dir)
+    except ValueError:
+        raise ValueError(f"Access denied: path outside allowed directory")
+
+    return resolved
 
 
 def detect_format(file_path: Path) -> FileFormat:
-    """Detect file format based on first non-whitespace character."""
-    with open(file_path, "r", encoding="utf-8") as f:
-        # Read first non-whitespace character
+    """Detect file format based on extension and content."""
+    safe_path = _validate_file_path(file_path)
+    ext = safe_path.suffix.lower()
+
+    # Extension-based detection
+    if ext == '.tsv':
+        return "tsv"
+    if ext == '.ltsv':
+        return "ltsv"
+    if ext == '.log':
+        with open(safe_path, 'r', encoding='utf-8') as f:
+            first_line = f.readline().strip()
+
+            # Check for syslog pattern (starts with <priority>)
+            if first_line.startswith('<') and '>' in first_line[:5]:
+                return "syslog"
+
+            # Check for LTSV pattern (key:value pairs separated by tabs or spaces)
+            # LTSV has multiple key:value pairs where key doesn't contain spaces
+            if '\t' in first_line:
+                pairs = first_line.split('\t')
+            else:
+                pairs = re.split(r'\s{2,}', first_line)
+
+            if len(pairs) >= 2:
+                # Check if most pairs look like key:value (word:something)
+                ltsv_like = sum(1 for p in pairs if re.match(r'^\w+:', p))
+                if ltsv_like >= len(pairs) * 0.7:  # 70% match threshold
+                    return "ltsv"
+
+        return "csv"  # Default for .log if not syslog or ltsv
+
+    # Content-based detection (existing logic)
+    with open(safe_path, "r", encoding="utf-8") as f:
         while True:
             char = f.read(1)
             if not char:
-                # Empty file, default to CSV
                 return "csv"
             if not char.isspace():
                 break
@@ -30,12 +82,19 @@ def detect_format(file_path: Path) -> FileFormat:
 
 def parse_preview(file_path: Path, format: FileFormat, limit: int = 100) -> list[dict]:
     """Parse first N records from file for preview."""
+    safe_path = _validate_file_path(file_path)
     if format == "json_array":
-        return _parse_json_array(file_path, limit)
+        return _parse_json_array(safe_path, limit)
     elif format == "ndjson":
-        return _parse_ndjson(file_path, limit)
+        return _parse_ndjson(safe_path, limit)
+    elif format == "tsv":
+        return _parse_tsv(safe_path, limit)
+    elif format == "ltsv":
+        return _parse_ltsv(safe_path, limit)
+    elif format == "syslog":
+        return _parse_syslog(safe_path, limit)
     else:
-        return _parse_csv(file_path, limit)
+        return _parse_csv(safe_path, limit)
 
 
 def _parse_json_array(file_path: Path, limit: int) -> list[dict]:
@@ -83,6 +142,138 @@ def _parse_csv(file_path: Path, limit: int) -> list[dict]:
             if len(records) >= limit:
                 break
         return records
+
+
+def _parse_tsv(file_path: Path, limit: int) -> list[dict]:
+    """Parse tab-separated values.
+
+    Handles both actual tabs and multiple spaces as delimiters.
+    """
+    with open(file_path, "r", encoding="utf-8", newline="") as f:
+        # Read first line to detect delimiter
+        first_line = f.readline()
+        f.seek(0)
+
+        # Check if actual tabs exist
+        if '\t' in first_line:
+            reader = csv.DictReader(f, delimiter='\t')
+        else:
+            # Fall back to splitting on 2+ spaces
+            lines = f.readlines()
+            if not lines:
+                return []
+
+            # Parse header
+            header = re.split(r'\s{2,}', lines[0].strip())
+            records = []
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                values = re.split(r'\s{2,}', line)
+                # Pad with empty strings if fewer values than headers
+                while len(values) < len(header):
+                    values.append('')
+                record = dict(zip(header, values[:len(header)]))
+                records.append(record)
+                if len(records) >= limit:
+                    break
+            return records
+
+        records = []
+        for row in reader:
+            records.append(dict(row))
+            if len(records) >= limit:
+                break
+        return records
+
+
+def _parse_ltsv(file_path: Path, limit: int) -> list[dict]:
+    """Parse Labeled Tab-separated Values (key:value pairs separated by tabs).
+
+    Handles both actual tabs and multiple spaces as delimiters.
+    """
+    records = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Detect delimiter: tabs or multiple spaces
+            if '\t' in line:
+                pairs = line.split('\t')
+            else:
+                pairs = re.split(r'\s{2,}', line)
+
+            record = {}
+            for pair in pairs:
+                if ':' in pair:
+                    key, value = pair.split(':', 1)
+                    record[key.strip()] = value.strip()
+
+            if record:
+                records.append(record)
+                if len(records) >= limit:
+                    break
+
+    return records
+
+
+def _parse_syslog(file_path: Path, limit: int) -> list[dict]:
+    """Parse syslog format (RFC 3164 and RFC 5424)."""
+    # RFC 3164: <PRI>TIMESTAMP HOSTNAME TAG: MESSAGE
+    # RFC 5424: <PRI>VERSION TIMESTAMP HOSTNAME APP-NAME PROCID MSGID SD MSG
+
+    rfc3164_pattern = re.compile(
+        r'^<(\d+)>(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(\S+)\s+(\S+?):\s*(.*)$'
+    )
+    rfc5424_pattern = re.compile(
+        r'^<(\d+)>(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(?:\[.*?\]\s*)?(.*)$'
+    )
+
+    records = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            record = {}
+
+            # Try RFC 5424 first (more structured)
+            match = rfc5424_pattern.match(line)
+            if match:
+                record = {
+                    "priority": match.group(1),
+                    "version": match.group(2),
+                    "timestamp": match.group(3),
+                    "hostname": match.group(4),
+                    "app_name": match.group(5),
+                    "proc_id": match.group(6),
+                    "msg_id": match.group(7),
+                    "message": match.group(8),
+                }
+            else:
+                # Try RFC 3164
+                match = rfc3164_pattern.match(line)
+                if match:
+                    record = {
+                        "priority": match.group(1),
+                        "timestamp": match.group(2),
+                        "hostname": match.group(3),
+                        "app_name": match.group(4),
+                        "message": match.group(5),
+                    }
+                else:
+                    # Fallback: just store as message
+                    record = {"message": line}
+
+            records.append(record)
+            if len(records) >= limit:
+                break
+
+    return records
 
 
 def infer_fields(records: list[dict]) -> list[dict]:
