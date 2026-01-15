@@ -13,17 +13,34 @@ class Settings(BaseSettings):
     data_dir: str = "/data"
     max_file_size_mb: int = 500
 
+    # App URL (used for CORS and OIDC callback)
+    app_url: Optional[str] = None
+
     # Auth settings
     session_secret: str = "change-me-in-production"
     session_duration_hours: int = 8
+
+    # OIDC settings
     oidc_enabled: bool = False
     oidc_issuer_url: Optional[str] = None
     oidc_client_id: Optional[str] = None
     oidc_client_secret: Optional[str] = None
-    oidc_redirect_uri: Optional[str] = None
+    oidc_allowed_domain: Optional[str] = None
+    oidc_admin_group: Optional[str] = None
 
     class Config:
         env_file = ".env"
+
+    def get_cors_origins(self) -> list[str]:
+        """Get CORS origins from APP_URL or default to localhost for dev."""
+        if self.app_url:
+            return [self.app_url.rstrip("/")]
+        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    def get_oidc_redirect_uri(self) -> str:
+        """Get OIDC redirect URI derived from APP_URL."""
+        base = self.app_url.rstrip("/") if self.app_url else "http://localhost:8080"
+        return f"{base}/api/auth/callback"
 
 
 settings = Settings()

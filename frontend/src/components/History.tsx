@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { deleteIndex, downloadFailures, getFailuresDownloadUrl, getHistory, UploadRecord } from '../api/client';
 
 interface HistoryProps {
@@ -175,9 +175,8 @@ export function History({ onClose }: HistoryProps) {
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {uploads.map((upload) => (
-                  <>
+                  <React.Fragment key={upload.id}>
                     <tr
-                      key={upload.id}
                       onClick={() => toggleExpand(upload.id)}
                       className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                     >
@@ -196,7 +195,16 @@ export function History({ onClose }: HistoryProps) {
                         <div className="text-gray-500 dark:text-gray-400">{formatFileSize(upload.file_size)}</div>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                        {upload.index_name || '-'}
+                        {upload.index_name ? (
+                          <div className="flex items-center gap-1">
+                            <span className={upload.index_deleted ? 'line-through text-gray-400' : ''}>
+                              {upload.index_name}
+                            </span>
+                            {upload.index_deleted ? (
+                              <span className="text-xs text-red-500 dark:text-red-400">(deleted)</span>
+                            ) : null}
+                          </div>
+                        ) : '-'}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
                         {upload.total_records !== null ? (
@@ -227,7 +235,7 @@ export function History({ onClose }: HistoryProps) {
                           >
                             Details
                           </button>
-                          {upload.failure_count && upload.failure_count > 0 && (
+                          {(upload.failure_count ?? 0) > 0 && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -241,7 +249,7 @@ export function History({ onClose }: HistoryProps) {
                               </svg>
                             </button>
                           )}
-                          {upload.status === 'completed' && upload.index_name && (
+                          {upload.status === 'completed' && upload.index_name && !upload.index_deleted && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -259,9 +267,48 @@ export function History({ onClose }: HistoryProps) {
                       </td>
                     </tr>
                     {expandedId === upload.id && (
-                      <tr key={`${upload.id}-expanded`}>
+                      <tr>
                         <td colSpan={7} className="px-4 py-4 bg-gray-50 dark:bg-gray-700/50">
                           <div className="space-y-3">
+                            {/* Basic info */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <span className="text-gray-500 dark:text-gray-400">Format:</span>{' '}
+                                <span className="text-gray-900 dark:text-white">{upload.file_format}</span>
+                              </div>
+                              {upload.user_name && (
+                                <div>
+                                  <span className="text-gray-500 dark:text-gray-400">Uploaded by:</span>{' '}
+                                  <span className="text-gray-900 dark:text-white">{upload.user_name}</span>
+                                </div>
+                              )}
+                              {upload.timestamp_field && (
+                                <div>
+                                  <span className="text-gray-500 dark:text-gray-400">Timestamp field:</span>{' '}
+                                  <span className="text-gray-900 dark:text-white">{upload.timestamp_field}</span>
+                                </div>
+                              )}
+                              {upload.started_at && (
+                                <div>
+                                  <span className="text-gray-500 dark:text-gray-400">Started:</span>{' '}
+                                  <span className="text-gray-900 dark:text-white">{formatDate(upload.started_at)}</span>
+                                </div>
+                              )}
+                              {upload.completed_at && (
+                                <div>
+                                  <span className="text-gray-500 dark:text-gray-400">Completed:</span>{' '}
+                                  <span className="text-gray-900 dark:text-white">{formatDate(upload.completed_at)}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Index deleted notice */}
+                            {upload.index_deleted ? (
+                              <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded">
+                                Index has been deleted from OpenSearch
+                              </div>
+                            ) : null}
+
                             {/* Field mappings */}
                             {upload.field_mappings && Object.keys(upload.field_mappings).length > 0 && (
                               <div>
@@ -285,7 +332,7 @@ export function History({ onClose }: HistoryProps) {
                             )}
 
                             {/* Download failures button */}
-                            {upload.failure_count && upload.failure_count > 0 && (
+                            {(upload.failure_count ?? 0) > 0 && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -300,7 +347,7 @@ export function History({ onClose }: HistoryProps) {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -415,6 +462,13 @@ function UploadDetails({ upload, onClose }: { upload: UploadRecord; onClose: () 
             <p className="text-gray-900 dark:text-white">{upload.filename}</p>
           </div>
 
+          {upload.user_name && (
+            <div>
+              <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Uploaded By</label>
+              <p className="text-gray-900 dark:text-white">{upload.user_name}</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium text-gray-500 dark:text-gray-400">File Size</label>
@@ -429,7 +483,14 @@ function UploadDetails({ upload, onClose }: { upload: UploadRecord; onClose: () 
           {upload.index_name && (
             <div>
               <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Index Name</label>
-              <p className="text-gray-900 dark:text-white font-mono">{upload.index_name}</p>
+              <div className="flex items-center gap-2">
+                <p className={`font-mono ${upload.index_deleted ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}>
+                  {upload.index_name}
+                </p>
+                {upload.index_deleted ? (
+                  <span className="text-xs text-red-500 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded">deleted</span>
+                ) : null}
+              </div>
             </div>
           )}
 

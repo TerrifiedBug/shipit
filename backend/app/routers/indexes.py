@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 
 from app.config import settings
 from app.services.opensearch import delete_index
-from app.services.database import create_audit_log
+from app.services.database import create_audit_log, mark_index_deleted
 from app.routers.auth import require_auth
 
 router = APIRouter(prefix="/indexes", tags=["indexes"])
@@ -26,6 +26,9 @@ def delete_index_endpoint(
     success = delete_index(index_name)
     if not success:
         raise HTTPException(status_code=404, detail="Index not found")
+
+    # Mark index as deleted in upload records so History reflects the deletion
+    mark_index_deleted(index_name)
 
     # Audit log
     create_audit_log(
