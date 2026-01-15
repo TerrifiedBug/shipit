@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getFailuresDownloadUrl, getHistory, UploadRecord } from '../api/client';
+import { downloadFailures, getFailuresDownloadUrl, getHistory, UploadRecord } from '../api/client';
 
 interface HistoryProps {
   onClose: () => void;
@@ -46,6 +46,11 @@ export function History({ onClose }: HistoryProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedUpload, setSelectedUpload] = useState<UploadRecord | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const toggleExpand = (id: string) => {
+    setExpandedId(expandedId === id ? null : id);
+  };
 
   useEffect(() => {
     loadHistory();
@@ -121,6 +126,7 @@ export function History({ onClose }: HistoryProps) {
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
+                  <th className="px-4 py-3 w-8"></th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                     Filename
                   </th>
@@ -143,52 +149,118 @@ export function History({ onClose }: HistoryProps) {
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {uploads.map((upload) => (
-                  <tr key={upload.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                      <div className="font-medium">{upload.filename}</div>
-                      <div className="text-gray-500 dark:text-gray-400">{formatFileSize(upload.file_size)}</div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                      {upload.index_name || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                      {upload.total_records !== null ? (
-                        <div>
-                          <span className="text-green-600 dark:text-green-400">{upload.success_count}</span>
-                          {upload.failure_count !== null && upload.failure_count > 0 && (
-                            <span className="text-red-600 dark:text-red-400 ml-1">/ {upload.failure_count} failed</span>
+                  <>
+                    <tr
+                      key={upload.id}
+                      onClick={() => toggleExpand(upload.id)}
+                      className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                    >
+                      <td className="px-4 py-2">
+                        <svg
+                          className={`w-5 h-5 text-gray-400 transition-transform ${expandedId === upload.id ? 'rotate-90' : ''}`}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                        <div className="font-medium">{upload.filename}</div>
+                        <div className="text-gray-500 dark:text-gray-400">{formatFileSize(upload.file_size)}</div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                        {upload.index_name || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                        {upload.total_records !== null ? (
+                          <div>
+                            <span className="text-green-600 dark:text-green-400">{upload.success_count}</span>
+                            {upload.failure_count !== null && upload.failure_count > 0 && (
+                              <span className="text-red-600 dark:text-red-400 ml-1">/ {upload.failure_count} failed</span>
+                            )}
+                          </div>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={upload.status} />
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                        {formatDate(upload.created_at)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedUpload(upload);
+                            }}
+                            className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
+                          >
+                            Details
+                          </button>
+                          {upload.failure_count && upload.failure_count > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                downloadFailures(upload.id);
+                              }}
+                              className="p-1 text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300"
+                              title={`Download ${upload.failure_count} failed records`}
+                            >
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                            </button>
                           )}
                         </div>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={upload.status} />
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                      {formatDate(upload.created_at)}
-                    </td>
-                    <td className="px-4 py-3 text-sm">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setSelectedUpload(upload)}
-                          className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
-                        >
-                          Details
-                        </button>
-                        {upload.failure_count !== null && upload.failure_count > 0 && (
-                          <a
-                            href={getFailuresDownloadUrl(upload.id)}
-                            className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
-                            download
-                          >
-                            Failures
-                          </a>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
+                    {expandedId === upload.id && (
+                      <tr key={`${upload.id}-expanded`}>
+                        <td colSpan={7} className="px-4 py-4 bg-gray-50 dark:bg-gray-700/50">
+                          <div className="space-y-3">
+                            {/* Field mappings */}
+                            {upload.field_mappings && Object.keys(upload.field_mappings).length > 0 && (
+                              <div>
+                                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Field Mappings</h4>
+                                <div className="flex flex-wrap gap-2">
+                                  {Object.entries(upload.field_mappings).map(([from, to]) => (
+                                    <span key={from} className="text-sm bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded">
+                                      {from} → {to as string}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Error message */}
+                            {upload.error_message && (
+                              <div>
+                                <h4 className="text-sm font-medium text-red-700 dark:text-red-400 mb-1">Error</h4>
+                                <p className="text-sm text-red-600 dark:text-red-300">{upload.error_message}</p>
+                              </div>
+                            )}
+
+                            {/* Download failures button */}
+                            {upload.failure_count && upload.failure_count > 0 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  downloadFailures(upload.id);
+                                }}
+                                className="text-sm text-orange-600 dark:text-orange-400 hover:underline"
+                              >
+                                Download {upload.failure_count} failed records
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>
