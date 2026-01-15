@@ -87,7 +87,6 @@ class TestIngestFile:
             file_path=json_array_file,
             file_format="json_array",
             index_name="shipit-test",
-            batch_size=1000,
         )
 
         assert result.processed == 3
@@ -104,7 +103,6 @@ class TestIngestFile:
             file_format="json_array",
             index_name="shipit-test",
             field_mappings={"name": "user.name"},
-            batch_size=1000,
         )
 
         # Check that mappings were applied
@@ -122,7 +120,6 @@ class TestIngestFile:
             file_format="json_array",
             index_name="shipit-test",
             excluded_fields=["age"],
-            batch_size=1000,
         )
 
         # Check that exclusions were applied
@@ -130,8 +127,9 @@ class TestIngestFile:
         records = call_args[0][1]
         assert all("age" not in r for r in records)
 
+    @patch("app.services.ingestion.settings")
     @patch("app.services.ingestion.bulk_index")
-    def test_batching(self, mock_bulk_index, temp_dir):
+    def test_batching(self, mock_bulk_index, mock_settings, temp_dir):
         """Test that records are batched correctly."""
         # Create a file with 5 records
         import json
@@ -140,20 +138,22 @@ class TestIngestFile:
         file_path.write_text(json.dumps(data))
 
         mock_bulk_index.return_value = {"success": 2, "failed": []}
+        mock_settings.bulk_batch_size = 2  # Small batch size
+        mock_settings.data_dir = "/data"
 
         result = ingest_file(
             file_path=file_path,
             file_format="json_array",
             index_name="shipit-test",
-            batch_size=2,  # Small batch size
         )
 
         # Should have been called 3 times: 2+2+1
         assert mock_bulk_index.call_count == 3
         assert result.processed == 5
 
+    @patch("app.services.ingestion.settings")
     @patch("app.services.ingestion.bulk_index")
-    def test_progress_callback(self, mock_bulk_index, temp_dir):
+    def test_progress_callback(self, mock_bulk_index, mock_settings, temp_dir):
         """Test that progress callback is called."""
         import json
         file_path = temp_dir / "progress_test.json"
@@ -161,6 +161,8 @@ class TestIngestFile:
         file_path.write_text(json.dumps(data))
 
         mock_bulk_index.return_value = {"success": 2, "failed": []}
+        mock_settings.bulk_batch_size = 2  # Small batch size
+        mock_settings.data_dir = "/data"
 
         progress_calls = []
 
@@ -171,7 +173,6 @@ class TestIngestFile:
             file_path=file_path,
             file_format="json_array",
             index_name="shipit-test",
-            batch_size=2,
             progress_callback=progress_callback,
         )
 
