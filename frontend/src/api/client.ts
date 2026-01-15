@@ -243,6 +243,7 @@ export interface UploadRecord {
   created_at: string;
   error_message: string | null;
   index_deleted: number;
+  index_exists: boolean | null;
   user_name: string | null;
   user_email: string | null;
 }

@@ -197,11 +197,13 @@ export function History({ onClose }: HistoryProps) {
                       <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
                         {upload.index_name ? (
                           <div className="flex items-center gap-1">
-                            <span className={upload.index_deleted ? 'line-through text-gray-400' : ''}>
+                            <span className={upload.index_deleted || upload.index_exists === false ? 'line-through text-gray-400' : ''}>
                               {upload.index_name}
                             </span>
                             {upload.index_deleted ? (
                               <span className="text-xs text-red-500 dark:text-red-400">(deleted)</span>
+                            ) : upload.index_exists === false ? (
+                              <span className="text-xs text-orange-500 dark:text-orange-400" title="Index was deleted outside ShipIt">(missing)</span>
                             ) : null}
                           </div>
                         ) : '-'}
@@ -249,7 +251,7 @@ export function History({ onClose }: HistoryProps) {
                               </svg>
                             </button>
                           )}
-                          {upload.status === 'completed' && upload.index_name && !upload.index_deleted && (
+                          {upload.status === 'completed' && upload.index_name && !upload.index_deleted && upload.index_exists !== false && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -305,7 +307,11 @@ export function History({ onClose }: HistoryProps) {
                             {/* Index deleted notice */}
                             {upload.index_deleted ? (
                               <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded">
-                                Index has been deleted from OpenSearch
+                                Index was deleted via ShipIt
+                              </div>
+                            ) : upload.index_exists === false ? (
+                              <div className="text-sm text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-3 py-2 rounded">
+                                Index was deleted externally (outside ShipIt)
                               </div>
                             ) : null}
 
@@ -484,11 +490,13 @@ function UploadDetails({ upload, onClose }: { upload: UploadRecord; onClose: () 
             <div>
               <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Index Name</label>
               <div className="flex items-center gap-2">
-                <p className={`font-mono ${upload.index_deleted ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}>
+                <p className={`font-mono ${upload.index_deleted || upload.index_exists === false ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}>
                   {upload.index_name}
                 </p>
                 {upload.index_deleted ? (
                   <span className="text-xs text-red-500 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded">deleted</span>
+                ) : upload.index_exists === false ? (
+                  <span className="text-xs text-orange-500 bg-orange-100 dark:bg-orange-900/30 px-2 py-0.5 rounded" title="Index was deleted outside ShipIt">missing</span>
                 ) : null}
               </div>
             </div>
