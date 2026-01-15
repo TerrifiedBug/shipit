@@ -35,7 +35,8 @@ def _init_uploads_table(conn: sqlite3.Connection) -> None:
             started_at      TIMESTAMP,
             completed_at    TIMESTAMP,
             created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            error_message   TEXT
+            error_message   TEXT,
+            user_id         TEXT REFERENCES users(id)
         );
 
         CREATE INDEX IF NOT EXISTS idx_uploads_created_at ON uploads(created_at DESC);
@@ -117,15 +118,16 @@ def create_upload(
     filename: str,
     file_size: int,
     file_format: str,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a new upload record."""
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO uploads (id, filename, file_size, file_format, status)
-            VALUES (?, ?, ?, ?, 'pending')
+            INSERT INTO uploads (id, filename, file_size, file_format, status, user_id)
+            VALUES (?, ?, ?, ?, 'pending', ?)
             """,
-            (upload_id, filename, file_size, file_format),
+            (upload_id, filename, file_size, file_format, user_id),
         )
     return get_upload(upload_id)
 
