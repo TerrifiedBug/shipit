@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     data_dir: str = "/data"
     max_file_size_mb: int = 500
 
+    # Ingestion settings
+    bulk_batch_size: int = 1000
+
     # App URL (used for CORS and OIDC callback)
     app_url: Optional[str] = None
 

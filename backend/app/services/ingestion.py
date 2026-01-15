@@ -212,7 +212,6 @@ def ingest_file(
     field_mappings: dict[str, str] | None = None,
     excluded_fields: list[str] | None = None,
     timestamp_field: str | None = None,
-    batch_size: int = 1000,
     progress_callback: Callable[[int, int, int], None] | None = None,
 ) -> IngestionResult:
     """
@@ -225,7 +224,6 @@ def ingest_file(
         field_mappings: Optional dict mapping original field names to new names
         excluded_fields: Optional list of fields to exclude
         timestamp_field: Optional field to parse as timestamp and map to @timestamp
-        batch_size: Number of records per bulk request
         progress_callback: Optional callback(processed, success, failed) for progress updates
 
     Returns:
@@ -248,7 +246,7 @@ def ingest_file(
         )
         batch.append(mapped_record)
 
-        if len(batch) >= batch_size:
+        if len(batch) >= settings.bulk_batch_size:
             # Flush batch
             _flush_batch(batch, index_name, result)
             batch = []

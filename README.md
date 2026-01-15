@@ -79,6 +79,7 @@ docker run -p 80:80 --env-file .env shipit
 | `SESSION_DURATION_HOURS` | `8` | How long user sessions remain valid |
 | `APP_URL` | - | Public URL for CORS and OIDC callbacks (e.g., `https://shipit.example.com`) |
 | `FAILURE_FILE_RETENTION_HOURS` | `24` | How long to keep failed record files |
+| `BULK_BATCH_SIZE` | `1000` | Number of records per bulk insert to OpenSearch |
 
 ### OIDC SSO (Optional)
 
