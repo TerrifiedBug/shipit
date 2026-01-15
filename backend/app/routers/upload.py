@@ -56,9 +56,17 @@ def _sanitize_filename(filename: str | None) -> str:
     return Path(filename).name
 
 
-def _sanitize_upload_id(upload_id: str) -> str:
-    """Sanitize upload_id to prevent path traversal attacks."""
-    return Path(upload_id).name
+def _validate_upload_id(upload_id: str) -> str:
+    """Validate upload_id is a valid UUID to prevent path traversal attacks.
+
+    Returns the canonical UUID string representation.
+    Raises HTTPException if invalid.
+    """
+    try:
+        # Parse and re-serialize to get canonical form
+        return str(uuid.UUID(upload_id))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Invalid upload ID format")
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -180,7 +188,7 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
 @router.get("/upload/{upload_id}/preview", response_model=PreviewResponse)
 async def get_preview(upload_id: str):
     """Get preview data for previously uploaded file(s)."""
-    safe_id = _sanitize_upload_id(upload_id)
+    safe_id = _validate_upload_id(upload_id)
     upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
@@ -344,7 +352,7 @@ def _run_ingestion_task(
 @router.post("/upload/{upload_id}/ingest")
 async def start_ingest(upload_id: str, request: IngestRequest):
     """Start ingestion of uploaded file(s) into OpenSearch (async)."""
-    safe_id = _sanitize_upload_id(upload_id)
+    safe_id = _validate_upload_id(upload_id)
     upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
@@ -429,7 +437,7 @@ async def start_ingest(upload_id: str, request: IngestRequest):
 @router.post("/upload/{upload_id}/cancel")
 async def cancel_ingest(upload_id: str, delete_index: bool = False):
     """Cancel an in-progress ingestion."""
-    safe_id = _sanitize_upload_id(upload_id)
+    safe_id = _validate_upload_id(upload_id)
     upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
@@ -466,7 +474,7 @@ async def cancel_ingest(upload_id: str, delete_index: bool = False):
 @router.get("/upload/{upload_id}/status")
 async def get_status(upload_id: str):
     """SSE endpoint for live ingestion progress."""
-    safe_id = _sanitize_upload_id(upload_id)
+    safe_id = _validate_upload_id(upload_id)
     upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
@@ -540,7 +548,7 @@ async def abandon_upload(upload_id: str):
 @router.delete("/upload/{upload_id}")
 async def delete_upload(upload_id: str):
     """Delete a pending upload that was abandoned before ingestion started."""
-    safe_id = _sanitize_upload_id(upload_id)
+    safe_id = _validate_upload_id(upload_id)
     upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
