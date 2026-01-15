@@ -1,25 +1,34 @@
 import { useCallback, useState } from 'react';
-import { uploadFile, UploadResponse } from '../api/client';
+import { uploadFiles, UploadResponse } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 
 interface UploadProps {
   onUploadComplete: (data: UploadResponse) => void;
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function Upload({ onUploadComplete }: UploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { addToast } = useToast();
 
-  const handleFile = useCallback(async (file: File) => {
+  const handleFiles = useCallback(async (files: File[]) => {
     setError(null);
+    setSelectedFiles(files);
     setIsUploading(true);
 
     try {
-      const result = await uploadFile(file);
+      const result = await uploadFiles(files);
       onUploadComplete(result);
-      addToast('File uploaded successfully', 'success');
+      addToast(files.length > 1 ? 'Files uploaded successfully' : 'File uploaded successfully', 'success');
+      setSelectedFiles([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -41,18 +50,20 @@ export function Upload({ onUploadComplete }: UploadProps) {
     e.preventDefault();
     setIsDragging(false);
 
-    const files = e.dataTransfer.files;
+    const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
-      handleFile(files[0]);
+      handleFiles(files);
     }
-  }, [handleFile]);
+  }, [handleFiles]);
 
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      handleFile(files[0]);
+      handleFiles(Array.from(files));
     }
-  }, [handleFile]);
+    // Reset the input so the same files can be selected again
+    e.target.value = '';
+  }, [handleFiles]);
 
   return (
     <div className="px-4 py-6 sm:px-0">
@@ -88,7 +99,16 @@ export function Upload({ onUploadComplete }: UploadProps) {
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 />
               </svg>
-              <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Uploading...</p>
+              <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">
+                Uploading {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''}...
+              </p>
+              {selectedFiles.length > 0 && (
+                <ul className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  {selectedFiles.map((file, i) => (
+                    <li key={i}>{file.name} ({formatFileSize(file.size)})</li>
+                  ))}
+                </ul>
+              )}
             </>
           ) : (
             <>
@@ -114,13 +134,14 @@ export function Upload({ onUploadComplete }: UploadProps) {
                     <input
                       type="file"
                       className="hidden"
-                      accept=".json,.csv"
+                      accept=".json,.csv,.tsv,.ltsv,.log"
+                      multiple
                       onChange={handleFileInput}
                     />
                   </label>
                 </p>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Supports JSON and CSV files
+                  Supports JSON, CSV, TSV, LTSV, and LOG files
                 </p>
               </div>
             </>
