@@ -19,6 +19,14 @@ MONTH_MAP = {
     "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
 }
 
+# Syslog patterns (compiled once at module level)
+_RFC3164_PATTERN = re.compile(
+    r'^<(\d+)>(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(\S+)\s+(\S+?):\s*(.*)$'
+)
+_RFC5424_PATTERN = re.compile(
+    r'^<(\d+)>(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(?:\[.*?\]\s*)?(.*)$'
+)
+
 
 def parse_timestamp(value: Any) -> str | None:
     """
@@ -144,6 +152,12 @@ def stream_records(
         yield from _stream_json_array(file_path)
     elif file_format == "ndjson":
         yield from _stream_ndjson(file_path)
+    elif file_format == "tsv":
+        yield from _stream_tsv(file_path)
+    elif file_format == "ltsv":
+        yield from _stream_ltsv(file_path)
+    elif file_format == "syslog":
+        yield from _stream_syslog(file_path)
     else:
         yield from _stream_csv(file_path)
 
@@ -177,6 +191,69 @@ def _stream_csv(file_path: Path) -> Iterator[dict[str, Any]]:
         reader = csv.DictReader(f, dialect=dialect)
         for row in reader:
             yield dict(row)
+
+
+def _stream_tsv(file_path: Path) -> Iterator[dict[str, Any]]:
+    """Stream records from TSV file."""
+    with open(file_path, "r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f, delimiter='\t')
+        for row in reader:
+            yield dict(row)
+
+
+def _stream_ltsv(file_path: Path) -> Iterator[dict[str, Any]]:
+    """Stream records from LTSV file (key:value pairs separated by tabs)."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            record = {}
+            for pair in line.split('\t'):
+                if ':' in pair:
+                    key, value = pair.split(':', 1)
+                    record[key] = value
+            if record:
+                yield record
+
+
+def _stream_syslog(file_path: Path) -> Iterator[dict[str, Any]]:
+    """Stream records from syslog file (RFC 3164 and RFC 5424)."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Try RFC 5424 first
+            match = _RFC5424_PATTERN.match(line)
+            if match:
+                yield {
+                    "priority": match.group(1),
+                    "version": match.group(2),
+                    "timestamp": match.group(3),
+                    "hostname": match.group(4),
+                    "app_name": match.group(5),
+                    "proc_id": match.group(6),
+                    "msg_id": match.group(7),
+                    "message": match.group(8),
+                }
+                continue
+
+            # Try RFC 3164
+            match = _RFC3164_PATTERN.match(line)
+            if match:
+                yield {
+                    "priority": match.group(1),
+                    "timestamp": match.group(2),
+                    "hostname": match.group(3),
+                    "app_name": match.group(4),
+                    "message": match.group(5),
+                }
+                continue
+
+            # Fallback
+            yield {"message": line}
 
 
 def count_records(file_path: Path, file_format: str) -> int:
