@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import settings
 from app.services.database import get_upload, list_uploads
+from app.services.opensearch import list_indexes
 
 router = APIRouter(tags=["history"])
 
@@ -19,6 +20,17 @@ async def get_history(
 ):
     """List past uploads with optional filtering."""
     uploads = list_uploads(limit=limit, offset=offset, status=status)
+
+    # Get all existing indexes in one call
+    existing_indexes = list_indexes(settings.index_prefix)
+
+    # Enrich uploads with index_exists field
+    for upload in uploads:
+        if upload.get("index_name"):
+            upload["index_exists"] = upload["index_name"] in existing_indexes
+        else:
+            upload["index_exists"] = None
+
     return {"uploads": uploads, "limit": limit, "offset": offset}
 
 
