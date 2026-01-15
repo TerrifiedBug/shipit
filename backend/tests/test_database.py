@@ -190,3 +190,35 @@ class TestDatabase:
         assert pending[0]["id"] == "pending-1"
         assert len(completed) == 1
         assert completed[0]["id"] == "completed-1"
+
+    def test_create_upload_with_user_id(self, temp_db):
+        """create_upload should store user_id when provided."""
+        # Create a test user first
+        user = db.create_user(
+            email="uploader@example.com",
+            name="Uploader",
+            auth_type="local",
+        )
+
+        upload = db.create_upload(
+            upload_id="user-upload-1",
+            filename="test.json",
+            file_size=1024,
+            file_format="json_array",
+            user_id=user["id"],
+        )
+
+        assert upload["id"] == "user-upload-1"
+        assert upload["user_id"] == user["id"]
+
+    def test_create_upload_without_user_id(self, temp_db):
+        """create_upload should allow None user_id for backward compatibility."""
+        upload = db.create_upload(
+            upload_id="no-user-upload",
+            filename="test.json",
+            file_size=1024,
+            file_format="json_array",
+        )
+
+        assert upload["id"] == "no-user-upload"
+        assert upload["user_id"] is None
