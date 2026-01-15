@@ -522,6 +522,12 @@ async def get_status(upload_id: str):
     )
 
 
+@router.post("/upload/{upload_id}/abandon")
+async def abandon_upload(upload_id: str):
+    """Abandon a pending upload (used by sendBeacon on page unload)."""
+    return await delete_upload(upload_id)
+
+
 @router.delete("/upload/{upload_id}")
 async def delete_upload(upload_id: str):
     """Delete a pending upload that was abandoned before ingestion started."""
