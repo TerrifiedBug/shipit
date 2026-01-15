@@ -1,4 +1,4 @@
-# ShipIt
+# ShipIt ![alt text](image.png)
 
 Self-service file ingestion tool for OpenSearch. Upload JSON or CSV files, configure field mappings, and bulk ingest into OpenSearch indices.
 
@@ -97,9 +97,8 @@ Supported formats:
 Planned features for future releases:
 
 ### Authentication
-- LDAP/AD integration, OIDC/SAML SSO, or local users
+- OIDC/SAML SSO, or local users
 - User identity in upload history for audit trails
-- Role-based access (viewer vs uploader)
 
 ### Custom Parsers - Regex/Grok
 - Ingest unstructured log files (plain text)
