@@ -222,3 +222,59 @@ class TestDatabase:
 
         assert upload["id"] == "no-user-upload"
         assert upload["user_id"] is None
+
+    def test_deactivate_user(self, temp_db):
+        """Test deactivating a user."""
+        from app.services.database import create_user, deactivate_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("test@example.com", "Test User", "local", hash_password("password123"), is_admin=False)
+        user_id = user["id"]
+
+        deactivate_user(user_id)
+
+        user = get_user_by_email("test@example.com")
+        assert user["is_active"] == 0  # SQLite returns 0/1 for boolean
+
+    def test_reactivate_user(self, temp_db):
+        """Test reactivating a deactivated user."""
+        from app.services.database import create_user, deactivate_user, reactivate_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("test@example.com", "Test User", "local", hash_password("password123"), is_admin=False)
+        user_id = user["id"]
+
+        deactivate_user(user_id)
+        reactivate_user(user_id)
+
+        user = get_user_by_email("test@example.com")
+        assert user["is_active"] == 1
+
+    def test_deactivate_nonexistent_user(self, temp_db):
+        """Deactivating non-existent user should not raise error."""
+        from app.services.database import deactivate_user
+        # Should not raise exception
+        deactivate_user("nonexistent-id")
+
+    def test_deactivate_already_deactivated(self, temp_db):
+        """Deactivating an already deactivated user should be idempotent."""
+        from app.services.database import create_user, deactivate_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("test@example.com", "Test", "local", hash_password("pass"), False)
+        deactivate_user(user["id"])
+        deactivate_user(user["id"])  # Second deactivation
+
+        user = get_user_by_email("test@example.com")
+        assert user["is_active"] == 0
+
+    def test_reactivate_already_active(self, temp_db):
+        """Reactivating an already active user should be idempotent."""
+        from app.services.database import create_user, reactivate_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("test@example.com", "Test", "local", hash_password("pass"), False)
+        reactivate_user(user["id"])  # Already active
+
+        user = get_user_by_email("test@example.com")
+        assert user["is_active"] == 1

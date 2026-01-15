@@ -60,6 +60,7 @@ def _init_users_table(conn: sqlite3.Connection) -> None:
             auth_type TEXT NOT NULL,
             password_hash TEXT,
             is_admin INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
             password_change_required INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_login TIMESTAMP,
@@ -70,6 +71,7 @@ def _init_users_table(conn: sqlite3.Connection) -> None:
     for column, definition in [
         ("password_change_required", "INTEGER DEFAULT 0"),
         ("deleted_at", "TIMESTAMP"),
+        ("is_active", "INTEGER DEFAULT 1"),
     ]:
         try:
             conn.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
@@ -431,6 +433,39 @@ def count_users() -> int:
     """Count total users."""
     with get_connection() as conn:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def deactivate_user(user_id: str) -> None:
+    """
+    Deactivate a user account.
+
+    Prevents the user from logging in while keeping their email address
+    associated with the account. The user can be reactivated later.
+
+    Args:
+        user_id: The unique identifier of the user to deactivate.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET is_active = 0 WHERE id = ?",
+            (user_id,)
+        )
+
+
+def reactivate_user(user_id: str) -> None:
+    """
+    Reactivate a deactivated user account.
+
+    Restores login access for a previously deactivated user.
+
+    Args:
+        user_id: The unique identifier of the user to reactivate.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET is_active = 1 WHERE id = ?",
+            (user_id,)
+        )
 
 
 # API Key functions
