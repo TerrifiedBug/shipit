@@ -223,3 +223,66 @@ class TestAuthEndpoints:
         # Session should be cleared
         me_response = client.get("/api/auth/me", cookies=logout_response.cookies)
         assert me_response.status_code == 401
+
+
+class TestApiKeyEndpoints:
+    def _login(self, db):
+        """Helper to setup and login, returns cookies."""
+        client.post("/api/auth/setup", json={
+            "email": "keytest@example.com",
+            "password": "password",
+            "name": "Key Test User",
+        })
+        response = client.post("/api/auth/login", json={
+            "email": "keytest@example.com",
+            "password": "password",
+        })
+        return response.cookies
+
+    def test_create_api_key(self, db):
+        cookies = self._login(db)
+        response = client.post("/api/keys", json={
+            "name": "My Key",
+            "expires_in_days": 30,
+        }, cookies=cookies)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "My Key"
+        assert data["key"].startswith("shipit_")
+        # Key should only be shown once
+        assert len(data["key"]) > 20
+
+    def test_list_api_keys(self, db):
+        cookies = self._login(db)
+        # Create a key
+        client.post("/api/keys", json={"name": "List Key", "expires_in_days": 30}, cookies=cookies)
+        # List keys
+        response = client.get("/api/keys", cookies=cookies)
+        assert response.status_code == 200
+        keys = response.json()
+        assert len(keys) >= 1
+        # Key hash should not be in response
+        assert "key_hash" not in keys[0]
+
+    def test_delete_api_key(self, db):
+        cookies = self._login(db)
+        # Create a key
+        create_response = client.post("/api/keys", json={"name": "Delete Key", "expires_in_days": 30}, cookies=cookies)
+        key_id = create_response.json()["id"]
+        # Delete it
+        delete_response = client.delete(f"/api/keys/{key_id}", cookies=cookies)
+        assert delete_response.status_code == 200
+        # Should not be in list anymore
+        list_response = client.get("/api/keys", cookies=cookies)
+        key_ids = [k["id"] for k in list_response.json()]
+        assert key_id not in key_ids
+
+    def test_api_key_auth(self, db):
+        cookies = self._login(db)
+        # Create a key
+        create_response = client.post("/api/keys", json={"name": "Auth Key", "expires_in_days": 30}, cookies=cookies)
+        api_key = create_response.json()["key"]
+        # Use the key to access /api/auth/me
+        response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {api_key}"})
+        assert response.status_code == 200
+        assert response.json()["email"] == "keytest@example.com"
