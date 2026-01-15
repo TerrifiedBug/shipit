@@ -1,0 +1,27 @@
+services:
+  shipit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    environment:
+      - OPENSEARCH_HOST=${OPENSEARCH_HOST}
+      - OPENSEARCH_USER=${OPENSEARCH_USER}
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
+      - INDEX_PREFIX=${INDEX_PREFIX:-shipit-}
+      - DATA_DIR=/data
+      - FAILURE_FILE_RETENTION_HOURS=${FAILURE_FILE_RETENTION_HOURS:-24}
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-500}
+    volumes:
+      - shipit-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  shipit-data:

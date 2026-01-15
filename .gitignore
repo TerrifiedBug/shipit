@@ -1,0 +1,28 @@
+.worktrees/
+.venv/
+docs/plans/
+
+# Environment files
+.env
+
+# Data directory (uploads, database, failures)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# Node
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+
+# Virtual environments
+.venv
+venv
+__pycache__
+
+# Node
+node_modules
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.egg-info
+dist
+build
+
+# Local data
+data
+*.db
+
+# Environment files (use Docker env vars instead)
+.env
+*.env
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Tests
+tests
+pytest.ini
+.pytest_cache
+.coverage
+htmlcov
+
+# Worktrees
+.worktrees

@@ -1,0 +1,40 @@
+from typing import Any, Literal
+
+from pydantic import BaseModel
+
+
+class FieldInfo(BaseModel):
+    name: str
+    type: str
+
+
+class UploadResponse(BaseModel):
+    upload_id: str
+    filename: str
+    file_size: int
+    file_format: Literal["json_array", "ndjson", "csv"]
+    preview: list[dict[str, Any]]
+    fields: list[FieldInfo]
+
+
+class PreviewResponse(BaseModel):
+    upload_id: str
+    filename: str
+    file_format: Literal["json_array", "ndjson", "csv"]
+    preview: list[dict[str, Any]]
+    fields: list[FieldInfo]
+
+
+class IngestRequest(BaseModel):
+    index_name: str
+    timestamp_field: str | None = None
+    field_mappings: dict[str, str] = {}
+    excluded_fields: list[str] = []
+
+
+class IngestResponse(BaseModel):
+    upload_id: str
+    index_name: str
+    processed: int
+    success: int
+    failed: int
