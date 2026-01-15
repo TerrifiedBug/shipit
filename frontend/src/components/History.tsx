@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { downloadFailures, getFailuresDownloadUrl, getHistory, UploadRecord } from '../api/client';
+import { deleteIndex, downloadFailures, getFailuresDownloadUrl, getHistory, UploadRecord } from '../api/client';
 
 interface HistoryProps {
   onClose: () => void;
@@ -47,6 +47,9 @@ export function History({ onClose }: HistoryProps) {
   const [selectedUpload, setSelectedUpload] = useState<UploadRecord | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; indexName: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
@@ -55,6 +58,13 @@ export function History({ onClose }: HistoryProps) {
   useEffect(() => {
     loadHistory();
   }, [statusFilter]);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   async function loadHistory() {
     setLoading(true);
@@ -66,6 +76,22 @@ export function History({ onClose }: HistoryProps) {
       setError(err instanceof Error ? err.message : 'Failed to load history');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDeleteIndex() {
+    if (!deleteTarget) return;
+
+    setDeleteLoading(true);
+    try {
+      await deleteIndex(deleteTarget.indexName);
+      setToast({ message: `Index ${deleteTarget.indexName} deleted successfully`, type: 'success' });
+      setDeleteTarget(null);
+      loadHistory();
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : 'Failed to delete index', type: 'error' });
+    } finally {
+      setDeleteLoading(false);
     }
   }
 
@@ -215,6 +241,20 @@ export function History({ onClose }: HistoryProps) {
                               </svg>
                             </button>
                           )}
+                          {upload.status === 'completed' && upload.index_name && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget({ id: upload.id, indexName: upload.index_name! });
+                              }}
+                              className="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                              title={`Delete index ${upload.index_name}`}
+                            >
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -284,6 +324,70 @@ export function History({ onClose }: HistoryProps) {
           upload={selectedUpload}
           onClose={() => setSelectedUpload(null)}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Delete Index
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-2">
+              Are you sure you want to delete the index:
+            </p>
+            <p className="font-mono text-sm bg-gray-100 dark:bg-gray-700 p-2 rounded mb-4 break-all">
+              {deleteTarget.indexName}
+            </p>
+            <p className="text-red-600 dark:text-red-400 text-sm mb-6">
+              This action cannot be undone. All documents in this index will be permanently deleted.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleteLoading}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteIndex}
+                disabled={deleteLoading}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {deleteLoading && (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                )}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-4 right-4 z-[70] px-4 py-3 rounded-lg shadow-lg ${
+          toast.type === 'success'
+            ? 'bg-green-600 text-white'
+            : 'bg-red-600 text-white'
+        }`}>
+          <div className="flex items-center gap-2">
+            {toast.type === 'success' ? (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+            <span>{toast.message}</span>
+          </div>
+        </div>
       )}
     </div>
   );
