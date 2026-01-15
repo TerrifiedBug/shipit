@@ -28,6 +28,23 @@ _RFC5424_PATTERN = re.compile(
 )
 
 
+def _validate_file_path(file_path: Path) -> Path:
+    """Validate file path is within allowed data directory.
+
+    Prevents path traversal attacks by ensuring the resolved path
+    is under the configured data directory.
+    """
+    resolved = file_path.resolve()
+    allowed_dir = Path(settings.data_dir).resolve()
+
+    try:
+        resolved.relative_to(allowed_dir)
+    except ValueError:
+        raise ValueError(f"Access denied: path outside allowed directory")
+
+    return resolved
+
+
 def parse_timestamp(value: Any) -> str | None:
     """
     Parse a timestamp value and convert to ISO8601 UTC format.
@@ -148,18 +165,19 @@ def stream_records(
     file_format: str,
 ) -> Iterator[dict[str, Any]]:
     """Stream records from a file without loading all into memory."""
+    safe_path = _validate_file_path(file_path)
     if file_format == "json_array":
-        yield from _stream_json_array(file_path)
+        yield from _stream_json_array(safe_path)
     elif file_format == "ndjson":
-        yield from _stream_ndjson(file_path)
+        yield from _stream_ndjson(safe_path)
     elif file_format == "tsv":
-        yield from _stream_tsv(file_path)
+        yield from _stream_tsv(safe_path)
     elif file_format == "ltsv":
-        yield from _stream_ltsv(file_path)
+        yield from _stream_ltsv(safe_path)
     elif file_format == "syslog":
-        yield from _stream_syslog(file_path)
+        yield from _stream_syslog(safe_path)
     else:
-        yield from _stream_csv(file_path)
+        yield from _stream_csv(safe_path)
 
 
 def _stream_json_array(file_path: Path) -> Iterator[dict[str, Any]]:
