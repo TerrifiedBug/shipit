@@ -137,6 +137,10 @@ export function getFailuresDownloadUrl(uploadId: string): string {
   return `${API_BASE}/api/upload/${uploadId}/failures`;
 }
 
+export function downloadFailures(uploadId: string): void {
+  window.open(`${API_BASE}/api/upload/${uploadId}/failures`, '_blank');
+}
+
 export interface ProgressEvent {
   processed: number;
   total: number;

@@ -1,4 +1,4 @@
-import { IngestResponse } from '../api/client';
+import { IngestResponse, downloadFailures } from '../api/client';
 
 interface ResultProps {
   result: IngestResponse;
@@ -61,7 +61,15 @@ export function Result({ result, onNewUpload }: ResultProps) {
         </div>
       </div>
 
-      <div className="flex justify-center">
+      <div className="flex justify-center gap-4">
+        {result.failed > 0 && (
+          <button
+            onClick={() => downloadFailures(result.upload_id)}
+            className="px-4 py-2 text-sm font-medium text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/30 rounded-md hover:bg-orange-200 dark:hover:bg-orange-900/50"
+          >
+            Download Failed Records ({result.failed})
+          </button>
+        )}
         <button
           onClick={onNewUpload}
           className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-md hover:bg-indigo-700"
