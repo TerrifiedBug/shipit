@@ -18,11 +18,11 @@ Self-service file ingestion tool for OpenSearch. Upload JSON or CSV files, confi
 |--------|---------|
 | ![Upload](docs/screenshots/upload.png) | ![Preview](docs/screenshots/preview.png) |
 
-| Configure | Progress |
+| Configure | Live Progress |
 |-----------|----------|
 | ![Configure](docs/screenshots/configure.png) | ![Progress](docs/screenshots/progress1.png) |
 
-| Progress (continued) |
+| Progress Complete |
 |----------------------|
 | ![Progress](docs/screenshots/progress2.png) |
 
