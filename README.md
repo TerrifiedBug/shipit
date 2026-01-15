@@ -1,4 +1,4 @@
-# ShipIt
+# <img src="docs/logo.png" width="32" height="32" alt="ShipIt"> ShipIt
 
 Self-service file ingestion tool for OpenSearch. Upload JSON or CSV files, configure field mappings, and bulk ingest into OpenSearch indices.
 
