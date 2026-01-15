@@ -194,25 +194,57 @@ def _stream_csv(file_path: Path) -> Iterator[dict[str, Any]]:
 
 
 def _stream_tsv(file_path: Path) -> Iterator[dict[str, Any]]:
-    """Stream records from TSV file."""
+    """Stream records from TSV file.
+
+    Handles both actual tabs and multiple spaces as delimiters.
+    """
     with open(file_path, "r", encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f, delimiter='\t')
-        for row in reader:
-            yield dict(row)
+        first_line = f.readline()
+        f.seek(0)
+
+        if '\t' in first_line:
+            reader = csv.DictReader(f, delimiter='\t')
+            for row in reader:
+                yield dict(row)
+        else:
+            # Fall back to splitting on 2+ spaces
+            lines = f.readlines()
+            if not lines:
+                return
+
+            header = re.split(r'\s{2,}', lines[0].strip())
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                values = re.split(r'\s{2,}', line)
+                while len(values) < len(header):
+                    values.append('')
+                yield dict(zip(header, values[:len(header)]))
 
 
 def _stream_ltsv(file_path: Path) -> Iterator[dict[str, Any]]:
-    """Stream records from LTSV file (key:value pairs separated by tabs)."""
+    """Stream records from LTSV file (key:value pairs separated by tabs).
+
+    Handles both actual tabs and multiple spaces as delimiters.
+    """
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
+
+            # Detect delimiter: tabs or multiple spaces
+            if '\t' in line:
+                pairs = line.split('\t')
+            else:
+                pairs = re.split(r'\s{2,}', line)
+
             record = {}
-            for pair in line.split('\t'):
+            for pair in pairs:
                 if ':' in pair:
                     key, value = pair.split(':', 1)
-                    record[key] = value
+                    record[key.strip()] = value.strip()
             if record:
                 yield record
 

@@ -107,9 +107,41 @@ def _parse_csv(file_path: Path, limit: int) -> list[dict]:
 
 
 def _parse_tsv(file_path: Path, limit: int) -> list[dict]:
-    """Parse tab-separated values."""
+    """Parse tab-separated values.
+
+    Handles both actual tabs and multiple spaces as delimiters.
+    """
     with open(file_path, "r", encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f, delimiter='\t')
+        # Read first line to detect delimiter
+        first_line = f.readline()
+        f.seek(0)
+
+        # Check if actual tabs exist
+        if '\t' in first_line:
+            reader = csv.DictReader(f, delimiter='\t')
+        else:
+            # Fall back to splitting on 2+ spaces
+            lines = f.readlines()
+            if not lines:
+                return []
+
+            # Parse header
+            header = re.split(r'\s{2,}', lines[0].strip())
+            records = []
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                values = re.split(r'\s{2,}', line)
+                # Pad with empty strings if fewer values than headers
+                while len(values) < len(header):
+                    values.append('')
+                record = dict(zip(header, values[:len(header)]))
+                records.append(record)
+                if len(records) >= limit:
+                    break
+            return records
+
         records = []
         for row in reader:
             records.append(dict(row))
@@ -119,7 +151,10 @@ def _parse_tsv(file_path: Path, limit: int) -> list[dict]:
 
 
 def _parse_ltsv(file_path: Path, limit: int) -> list[dict]:
-    """Parse Labeled Tab-separated Values (key:value pairs separated by tabs)."""
+    """Parse Labeled Tab-separated Values (key:value pairs separated by tabs).
+
+    Handles both actual tabs and multiple spaces as delimiters.
+    """
     records = []
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -127,11 +162,17 @@ def _parse_ltsv(file_path: Path, limit: int) -> list[dict]:
             if not line:
                 continue
 
+            # Detect delimiter: tabs or multiple spaces
+            if '\t' in line:
+                pairs = line.split('\t')
+            else:
+                pairs = re.split(r'\s{2,}', line)
+
             record = {}
-            for pair in line.split('\t'):
+            for pair in pairs:
                 if ':' in pair:
                     key, value = pair.split(':', 1)
-                    record[key] = value
+                    record[key.strip()] = value.strip()
 
             if record:
                 records.append(record)
