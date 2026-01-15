@@ -257,3 +257,9 @@ API keys inherit the creating user's permissions and are tracked in audit logs.
 - CSV columns are always strings; convert to numbers, booleans, dates
 - Per-field type dropdown in Configure step
 - Custom date format specification
+
+### Content-Based Format Detection
+- Move away from file extension reliance for format detection
+- Try multiple parsers and use the one that successfully parses the content
+- Would improve handling of `.log` files and extensionless files
+- Challenging: need to define "successful parse" heuristics
