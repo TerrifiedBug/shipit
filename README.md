@@ -19,17 +19,25 @@ Self-service file ingestion tool for OpenSearch. Designed for ad-hoc data upload
 
 ## Screenshots
 
-| Upload | Preview |
-|--------|---------|
-| ![Upload](docs/screenshots/upload.png) | ![Preview](docs/screenshots/preview.png) |
+| Login | Upload |
+|-------|--------|
+| ![Login](docs/screenshots/login.png) | ![Upload](docs/screenshots/upload.png) |
 
-| Configure | Live Progress |
-|-----------|----------|
-| ![Configure](docs/screenshots/configure.png) | ![Progress](docs/screenshots/progress1.png) |
+| Preview | Configure |
+|---------|-----------|
+| ![Preview](docs/screenshots/preview.png) | ![Configure](docs/screenshots/configure.png) |
 
-| Progress Complete |
-|----------------------|
-| ![Progress](docs/screenshots/progress2.png) |
+| Live Progress | Progress Complete |
+|---------------|-------------------|
+| ![Progress](docs/screenshots/progress1.png) | ![Progress](docs/screenshots/progress2.png) |
+
+| History | API Keys |
+|---------|----------|
+| ![History](docs/screenshots/history.png) | ![API Keys](docs/screenshots/api_keys.png) |
+
+| User Management |
+|-----------------|
+| ![User Management](docs/screenshots/user_management.png) |
 
 ## Quick Start (Development)
 
