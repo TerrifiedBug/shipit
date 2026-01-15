@@ -6,12 +6,34 @@ from typing import Literal
 
 import ijson
 
+from app.config import settings
+
 FileFormat = Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog"]
+
+
+def _validate_file_path(file_path: Path) -> Path:
+    """Validate file path is within allowed data directory.
+
+    Prevents path traversal attacks by ensuring the resolved path
+    is under the configured data directory.
+    """
+    # Resolve to absolute path (resolves symlinks and ..)
+    resolved = file_path.resolve()
+    allowed_dir = Path(settings.data_dir).resolve()
+
+    # Check path is under allowed directory
+    try:
+        resolved.relative_to(allowed_dir)
+    except ValueError:
+        raise ValueError(f"Access denied: path outside allowed directory")
+
+    return resolved
 
 
 def detect_format(file_path: Path) -> FileFormat:
     """Detect file format based on extension and content."""
-    ext = file_path.suffix.lower()
+    safe_path = _validate_file_path(file_path)
+    ext = safe_path.suffix.lower()
 
     # Extension-based detection
     if ext == '.tsv':
@@ -19,7 +41,7 @@ def detect_format(file_path: Path) -> FileFormat:
     if ext == '.ltsv':
         return "ltsv"
     if ext == '.log':
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(safe_path, 'r', encoding='utf-8') as f:
             first_line = f.readline().strip()
 
             # Check for syslog pattern (starts with <priority>)
@@ -42,7 +64,7 @@ def detect_format(file_path: Path) -> FileFormat:
         return "csv"  # Default for .log if not syslog or ltsv
 
     # Content-based detection (existing logic)
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(safe_path, "r", encoding="utf-8") as f:
         while True:
             char = f.read(1)
             if not char:
@@ -60,18 +82,19 @@ def detect_format(file_path: Path) -> FileFormat:
 
 def parse_preview(file_path: Path, format: FileFormat, limit: int = 100) -> list[dict]:
     """Parse first N records from file for preview."""
+    safe_path = _validate_file_path(file_path)
     if format == "json_array":
-        return _parse_json_array(file_path, limit)
+        return _parse_json_array(safe_path, limit)
     elif format == "ndjson":
-        return _parse_ndjson(file_path, limit)
+        return _parse_ndjson(safe_path, limit)
     elif format == "tsv":
-        return _parse_tsv(file_path, limit)
+        return _parse_tsv(safe_path, limit)
     elif format == "ltsv":
-        return _parse_ltsv(file_path, limit)
+        return _parse_ltsv(safe_path, limit)
     elif format == "syslog":
-        return _parse_syslog(file_path, limit)
+        return _parse_syslog(safe_path, limit)
     else:
-        return _parse_csv(file_path, limit)
+        return _parse_csv(safe_path, limit)
 
 
 def _parse_json_array(file_path: Path, limit: int) -> list[dict]:
