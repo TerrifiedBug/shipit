@@ -211,7 +211,28 @@ API keys inherit the creating user's permissions and are tracked in audit logs.
 
 ## Roadmap (V3)
 
-Planned features for future releases:
+Planned features for the next release:
+
+### Index Existence Check
+- Detect when indexes are deleted externally (outside ShipIt)
+- History page shows visual indicator for missing indexes
+- Distinguish "deleted via ShipIt" from "deleted externally"
+
+### Configurable Batch Size
+- New `BULK_BATCH_SIZE` environment variable (default: 1000)
+- Tune bulk insert performance for larger clusters
+
+### Multi-File Upload
+- Select multiple files to combine into a single index
+- All files must be same format (JSON, CSV, etc.)
+- Union of fields across files with conflict detection
+
+### Additional File Parsers
+- **TSV**: Tab-separated values
+- **LTSV**: Labeled Tab-separated Values (common in web server logs)
+- **Syslog**: RFC 3164 and RFC 5424 syslog message formats
+
+## Roadmap (V4+)
 
 ### Custom Parsers - Regex/Grok
 - Ingest unstructured log files (plain text)
@@ -222,12 +243,3 @@ Planned features for future releases:
 - CSV columns are always strings; convert to numbers, booleans, dates
 - Per-field type dropdown in Configure step
 - Custom date format specification
-
-### Additional File Parsers
-- **Syslog**: RFC 3164 and RFC 5424 syslog message formats
-- **TSV**: Tab-separated values
-- **LTSV**: Labeled Tab-separated Values (common in web server logs)
-
-### Multi-File Upload
-- Ingest multiple related files into the same index
-- Accept multiple files in upload step, concatenate during ingestion
