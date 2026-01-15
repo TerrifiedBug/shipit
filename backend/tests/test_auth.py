@@ -286,3 +286,29 @@ class TestApiKeyEndpoints:
         response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {api_key}"})
         assert response.status_code == 200
         assert response.json()["email"] == "keytest@example.com"
+
+
+class TestAuthMiddleware:
+    def test_protected_endpoint_requires_auth(self, db):
+        # /api/history should require auth
+        response = client.get("/api/history")
+        assert response.status_code == 401
+
+    def test_health_is_public(self, db):
+        response = client.get("/api/health")
+        assert response.status_code == 200
+
+    def test_protected_endpoint_with_auth(self, db):
+        # Setup and login
+        client.post("/api/auth/setup", json={
+            "email": "middleware@example.com",
+            "password": "password",
+            "name": "Middleware User",
+        })
+        login_response = client.post("/api/auth/login", json={
+            "email": "middleware@example.com",
+            "password": "password",
+        })
+        # Access protected endpoint
+        response = client.get("/api/history", cookies=login_response.cookies)
+        assert response.status_code == 200
