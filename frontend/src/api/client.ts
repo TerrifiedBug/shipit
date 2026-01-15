@@ -144,8 +144,9 @@ export interface FieldInfo {
 export interface UploadResponse {
   upload_id: string;
   filename: string;
+  filenames: string[];
   file_size: number;
-  file_format: 'json_array' | 'ndjson' | 'csv';
+  file_format: 'json_array' | 'ndjson' | 'csv' | 'tsv' | 'ltsv' | 'syslog';
   preview: Record<string, unknown>[];
   fields: FieldInfo[];
 }
@@ -158,9 +159,9 @@ export interface PreviewResponse {
   fields: FieldInfo[];
 }
 
-export async function uploadFile(file: File): Promise<UploadResponse> {
+export async function uploadFiles(files: File[]): Promise<UploadResponse> {
   const formData = new FormData();
-  formData.append('file', file);
+  files.forEach(file => formData.append('files', file));
 
   const response = await fetch(`${API_BASE}/api/upload`, {
     method: 'POST',
