@@ -94,8 +94,8 @@ async def upload_file(file: UploadFile, request: Request):
     user = getattr(request.state, "user", None)
     db.create_upload(
         upload_id=upload_id,
-        filename=file.filename,
-        file_size=file_size,
+        filenames=[file.filename],
+        file_sizes=[file_size],
         file_format=file_format,
         user_id=user["id"] if user else None,
     )
