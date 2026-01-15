@@ -216,51 +216,9 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 
 API keys inherit the creating user's permissions and are tracked in audit logs.
 
-## What's New in V2
-
-### Authentication & Security
-- Local user authentication with email/password
-- OIDC SSO with auto-provisioning and group-based admin roles
-- Admin UI for user management (create, edit, delete users)
-- First-user setup flow (auto-prompts for registration when no users exist)
-- Session-based auth with secure HTTP-only cookies
-- API keys for programmatic access with configurable expiry
-- Protected API endpoints with auth middleware
-- Audit logging for security-relevant actions
-- User attribution on uploads (who uploaded what)
-- Password change enforcement for admin-created users
-
-### History & Index Management
-- Expandable history rows showing user, field mappings (if renamed), timestamps, errors
-- Download failed records directly from Result page
-- Delete index button in History with confirmation
-- Visual indicator when index has been deleted
-- APP_URL configuration for proxy/DNS deployments
-
-## What's New in V3
-
-### Index Existence Check
-- Detects when indexes are deleted externally (outside ShipIt)
-- History page shows "(missing)" indicator for externally-deleted indexes
-- Distinguishes "deleted via ShipIt" from "deleted externally"
-
-### Configurable Batch Size
-- New `BULK_BATCH_SIZE` environment variable (default: 1000)
-- Tune bulk insert performance for larger clusters
-
-### Multi-File Upload
-- Select multiple files to combine into a single index
-- All files must be same format (JSON, CSV, TSV, etc.)
-- Duplicate filename detection prevents overwrites
-
-### Additional File Parsers
-- **TSV**: Tab-separated values with header row
-- **LTSV**: Labeled Tab-separated Values (`label:value` pairs)
-- **Syslog**: RFC 3164 and RFC 5424 syslog message formats
-
 ## Roadmap (V4+)
 
-### Elasticsearch Support
+### Full Elasticsearch Support
 - Add compatibility with Elasticsearch clusters
 - Auto-detect OpenSearch vs Elasticsearch from cluster info
 - Use appropriate client library based on target
