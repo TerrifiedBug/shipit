@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.routers import auth, health, history, indexes, keys, upload
+from app.config import settings
+from app.routers import admin, auth, health, history, indexes, keys, upload
 from app.routers.auth import get_current_user
 from app.services.database import init_db
 
@@ -18,8 +19,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/api/health",
         "/api/auth/setup",
         "/api/auth/login",
-        "/api/auth/callback",
         "/api/auth/logout",
+        "/api/auth/config",
+        "/api/auth/oidc/login",
+        "/api/auth/callback",
     }
 
     async def dispatch(self, request: Request, call_next):
@@ -61,12 +64,13 @@ app.add_middleware(AuthMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(admin.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(health.router, prefix="/api")
 app.include_router(indexes.router, prefix="/api")

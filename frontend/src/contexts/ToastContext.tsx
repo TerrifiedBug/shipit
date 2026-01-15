@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 interface Toast {
   id: number;
@@ -36,6 +36,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     success: 'bg-green-500',
     error: 'bg-red-500',
     info: 'bg-blue-500',
+    warning: 'bg-yellow-500',
   };
 
   return (

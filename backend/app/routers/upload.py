@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.config import settings
@@ -45,7 +45,7 @@ def _get_failures_dir() -> Path:
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_file(file: UploadFile):
+async def upload_file(file: UploadFile, request: Request):
     """Upload a file and return preview data."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
@@ -91,11 +91,13 @@ async def upload_file(file: UploadFile):
         raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
 
     # Create database record
+    user = getattr(request.state, "user", None)
     db.create_upload(
         upload_id=upload_id,
         filename=file.filename,
         file_size=file_size,
         file_format=file_format,
+        user_id=user["id"] if user else None,
     )
 
     # Cache file path and preview data
@@ -328,12 +330,27 @@ async def cancel_ingest(upload_id: str, delete_index: bool = False):
     # Set cancellation flag
     _cancellation_flags[upload_id] = True
 
+    # Wait briefly for ingestion thread to notice cancellation
+    for _ in range(10):
+        await asyncio.sleep(0.1)
+        progress = _ingestion_progress.get(upload_id)
+        if progress and progress.get("cancelled"):
+            break
+
     # Optionally delete the partial index
+    index_deleted = False
     if delete_index and upload.get("index_name"):
         from app.services.opensearch import delete_index as os_delete_index
-        os_delete_index(upload["index_name"])
+        index_deleted = os_delete_index(upload["index_name"])
+        if index_deleted:
+            # Mark in database that index was deleted
+            db.update_upload(upload_id, index_deleted=1)
 
-    return {"status": "cancelling", "upload_id": upload_id}
+    return {
+        "status": "cancelled",
+        "upload_id": upload_id,
+        "index_deleted": index_deleted if delete_index else None,
+    }
 
 
 @router.get("/upload/{upload_id}/status")
