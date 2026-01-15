@@ -208,7 +208,7 @@ API keys inherit the creating user's permissions and are tracked in audit logs.
 - Password change enforcement for admin-created users
 
 ### History & Index Management
-- Expandable history rows showing user, field mappings, timestamps, errors
+- Expandable history rows showing user, field mappings (if renamed), timestamps, errors
 - Download failed records directly from Result page
 - Delete index button in History with confirmation
 - Visual indicator when index has been deleted
@@ -236,6 +236,11 @@ API keys inherit the creating user's permissions and are tracked in audit logs.
 - **Syslog**: RFC 3164 and RFC 5424 syslog message formats
 
 ## Roadmap (V4+)
+
+### Elasticsearch Support
+- Add compatibility with Elasticsearch clusters
+- Auto-detect OpenSearch vs Elasticsearch from cluster info
+- Use appropriate client library based on target
 
 ### Logfmt Parser
 - Support for logfmt structured logs (`key=value key2="quoted value"`)
