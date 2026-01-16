@@ -16,10 +16,12 @@ class TestIndexProtection:
     def test_new_index_allowed(self, db):
         """Test that new indices (not existing in OpenSearch) are allowed."""
         from app.services.opensearch import validate_index_for_ingestion
+        from opensearchpy.exceptions import TransportError
 
         with patch("app.services.opensearch.get_client") as mock_get_client:
             mock_client = MagicMock()
-            mock_client.indices.exists.return_value = False
+            # Stats returns 404 for non-existent index
+            mock_client.indices.stats.side_effect = TransportError(404, "index_not_found")
             mock_get_client.return_value = mock_client
 
             result = validate_index_for_ingestion("shipit-new-index")
@@ -29,7 +31,7 @@ class TestIndexProtection:
             assert result["requires_tracking"] is True
 
     def test_tracked_index_allowed(self, db):
-        """Test that tracked indices are always allowed."""
+        """Test that tracked indices are always allowed (no OpenSearch call needed)."""
         from app.services.opensearch import validate_index_for_ingestion
         from app.services.database import track_index
 
@@ -37,15 +39,13 @@ class TestIndexProtection:
         track_index("shipit-tracked", user_id="user123")
 
         with patch("app.services.opensearch.get_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.indices.exists.return_value = True
-            mock_get_client.return_value = mock_client
-
             result = validate_index_for_ingestion("shipit-tracked")
 
             assert result["exists"] is True
             assert result["tracked"] is True
             assert result["requires_tracking"] is False
+            # Tracked indices don't need to call OpenSearch
+            mock_get_client.assert_not_called()
 
     def test_external_index_blocked_in_strict_mode(self, db):
         """Test that external indices are blocked in strict mode."""
@@ -53,7 +53,8 @@ class TestIndexProtection:
 
         with patch("app.services.opensearch.get_client") as mock_get_client:
             mock_client = MagicMock()
-            mock_client.indices.exists.return_value = True
+            # Stats succeeds = index exists
+            mock_client.indices.stats.return_value = {"indices": {}}
             mock_get_client.return_value = mock_client
 
             # Default is strict_index_mode=True

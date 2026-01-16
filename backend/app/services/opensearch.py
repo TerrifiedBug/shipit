@@ -174,18 +174,40 @@ def validate_index_for_ingestion(index_name: str) -> dict[str, Any]:
         return {"exists": False, "tracked": False, "requires_tracking": True}
 
     # Strict mode is on - need to check if index exists in OpenSearch
+    # Use stats API instead of exists API - more reliable with security plugins
     try:
         client = get_client()
-        exists = client.indices.exists(index=index_name)
+        # Try to get stats - 404 means index doesn't exist, success means it exists
+        client.indices.stats(index=index_name)
+        exists = True
+    except TransportError as e:
+        if e.status_code == 404:
+            # Index doesn't exist
+            exists = False
+        elif e.status_code == 403:
+            # Permission denied
+            logging.error(f"Permission denied checking if index '{index_name}' exists: {e}")
+            raise ValueError(
+                f"Cannot verify if index '{index_name}' exists - permission denied. "
+                f"The OpenSearch user needs 'indices:monitor/stats' permission on '{index_name}', "
+                f"or set STRICT_INDEX_MODE=false to skip this check."
+            )
+        else:
+            # Other transport error
+            logging.error(f"Error checking index '{index_name}': {e}")
+            raise ValueError(
+                f"Cannot verify if index '{index_name}' exists. "
+                f"Please check OpenSearch connection settings."
+            )
     except AuthorizationException as e:
-        # Permission denied - fail safely to prevent accidental writes to external indices
+        # Permission denied
         logging.error(f"Permission denied checking if index '{index_name}' exists: {e}")
         raise ValueError(
             f"Cannot verify if index '{index_name}' exists - permission denied. "
-            f"The OpenSearch user needs 'indices:admin/exists' permission on '{index_name}', "
+            f"The OpenSearch user needs 'indices:monitor/stats' permission on '{index_name}', "
             f"or set STRICT_INDEX_MODE=false to skip this check."
         )
-    except (ConnectionError, TransportError) as e:
+    except ConnectionError as e:
         # Can't connect - fail with clear error
         logging.error(f"Could not connect to OpenSearch to check index '{index_name}': {e}")
         raise ValueError(

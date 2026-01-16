@@ -122,8 +122,7 @@ The OpenSearch user needs these permissions:
 - `cluster_monitor` - Required for health check endpoint
 - `crud` on `shipit-*` indices - Read/write documents
 - `create_index` on `shipit-*` indices - Create new indices
-- `indices:admin/exists` on `shipit-*` indices - Required for index validation in strict mode
-- `indices:monitor/stats` and `indices:monitor/settings/get` on `shipit-*` indices - Required for index existence check in History
+- `indices:monitor/stats` and `indices:monitor/settings/get` on `shipit-*` indices - Required for History and strict index mode validation
 - `delete_index` on `shipit-*` indices - Required for "Delete Index" option when cancelling ingestion (optional)
 
 Example OpenSearch security role:
@@ -133,7 +132,7 @@ Example OpenSearch security role:
   "cluster_permissions": ["cluster_monitor"],
   "index_permissions": [{
     "index_patterns": ["shipit-*"],
-    "allowed_actions": ["crud", "create_index", "delete_index", "indices:admin/exists", "indices:monitor/stats", "indices:monitor/settings/get"]
+    "allowed_actions": ["crud", "create_index", "delete_index", "indices:monitor/stats", "indices:monitor/settings/get"]
   }]
 }
 ```
