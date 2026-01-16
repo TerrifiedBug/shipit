@@ -32,7 +32,7 @@ class IngestRequest(BaseModel):
     field_mappings: dict[str, str] = {}
     excluded_fields: list[str] = []
     include_filename: bool = False
-    filename_field: str = "_source_file"
+    filename_field: str = "source_file"
 
 
 class IngestResponse(BaseModel):

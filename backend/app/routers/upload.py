@@ -249,7 +249,7 @@ def _run_ingestion_task(
     track_index: bool = False,
     user_id: str | None = None,
     include_filename: bool = False,
-    filename_field: str = "_source_file",
+    filename_field: str = "source_file",
 ):
     """Run ingestion in a background thread."""
     start_time = time.time()

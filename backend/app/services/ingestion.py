@@ -341,7 +341,7 @@ def ingest_file(
     timestamp_field: str | None = None,
     progress_callback: Callable[[int, int, int], None] | None = None,
     include_filename: bool = False,
-    filename_field: str = "_source_file",
+    filename_field: str = "source_file",
 ) -> IngestionResult:
     """
     Ingest a file into OpenSearch.

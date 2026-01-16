@@ -214,9 +214,9 @@ class TestIngestFile:
         # Check that filename field was added
         call_args = mock_bulk_index.call_args
         records = call_args[0][1]
-        assert all("_source_file" in r for r in records)
+        assert all("source_file" in r for r in records)
         # The fixture file is named test_data.json
-        assert all(r["_source_file"] == json_array_file.name for r in records)
+        assert all(r["source_file"] == json_array_file.name for r in records)
 
     @patch("app.services.ingestion.bulk_index")
     def test_custom_filename_field(self, mock_bulk_index, json_array_file):
@@ -235,7 +235,7 @@ class TestIngestFile:
         call_args = mock_bulk_index.call_args
         records = call_args[0][1]
         assert all("origin_file" in r for r in records)
-        assert all("_source_file" not in r for r in records)
+        assert all("source_file" not in r for r in records)
 
     @patch("app.services.ingestion.bulk_index")
     def test_filename_not_included_by_default(self, mock_bulk_index, json_array_file):
@@ -251,4 +251,4 @@ class TestIngestFile:
         # Check that filename field was NOT added
         call_args = mock_bulk_index.call_args
         records = call_args[0][1]
-        assert all("_source_file" not in r for r in records)
+        assert all("source_file" not in r for r in records)

@@ -232,7 +232,7 @@ curl -X POST https://shipit.example.com/api/v1/upload \
 | `format` | No | Force format: `json`, `ndjson`, `csv`, `tsv`, `ltsv`, `syslog` (auto-detected if omitted) |
 | `timestamp_field` | No | Field to parse as `@timestamp` |
 | `include_filename` | No | Add source filename to each record (`true`/`false`) |
-| `filename_field` | No | Name of filename field (default: `_source_file`) |
+| `filename_field` | No | Name of filename field (default: `source_file`) |
 
 **Response:**
 

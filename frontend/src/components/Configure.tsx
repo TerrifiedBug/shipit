@@ -84,7 +84,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [includeFilename, setIncludeFilename] = useState(false);
-  const [filenameField, setFilenameField] = useState('_source_file');
+  const [filenameField, setFilenameField] = useState('source_file');
 
   const handleFieldNameChange = (index: number, newName: string) => {
     setFieldMappings((prev) =>
@@ -362,7 +362,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                   onChange={(e) => setFilenameField(e.target.value)}
                   disabled={isIngesting}
                   className="block w-full max-w-xs px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                  placeholder="_source_file"
+                  placeholder="source_file"
                 />
               </div>
             )}
