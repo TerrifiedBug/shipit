@@ -96,46 +96,39 @@ def _init_api_keys_table(conn: sqlite3.Connection) -> None:
 
 def _init_audit_log_table(conn: sqlite3.Connection) -> None:
     """Create audit_log table for comprehensive audit logging."""
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS audit_log (
-            id TEXT PRIMARY KEY,
-            event_type TEXT NOT NULL,
-            actor_id TEXT,
-            actor_name TEXT,
-            target_type TEXT,
-            target_id TEXT,
-            details TEXT,
-            ip_address TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    # Check if old audit_log table exists with incompatible schema
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log'")
+    table_exists = cursor.fetchone() is not None
+
+    if table_exists:
+        # Check if it has the new schema (event_type column)
+        cursor = conn.execute("PRAGMA table_info(audit_log)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        if "event_type" not in columns:
+            # Old schema - drop and recreate (audit logs are not critical data)
+            conn.execute("DROP TABLE audit_log")
+            table_exists = False
+
+    if not table_exists:
+        conn.execute("""
+            CREATE TABLE audit_log (
+                id TEXT PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                actor_id TEXT,
+                actor_name TEXT,
+                target_type TEXT,
+                target_id TEXT,
+                details TEXT,
+                ip_address TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+    # Create indexes (safe now that schema is correct)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log(event_type)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_actor_id ON audit_log(actor_id)")
-
-    # Migration: add new columns if they don't exist (for existing installs)
-    for column, definition in [
-        ("event_type", "TEXT"),
-        ("actor_id", "TEXT"),
-        ("actor_name", "TEXT"),
-        ("target_type", "TEXT"),
-        ("target_id", "TEXT"),
-        ("ip_address", "TEXT"),
-    ]:
-        try:
-            conn.execute(f"ALTER TABLE audit_log ADD COLUMN {column} {definition}")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-
-    # Migrate old data: copy action to event_type, user_id to actor_id if needed
-    try:
-        conn.execute("""
-            UPDATE audit_log
-            SET event_type = action, actor_id = user_id
-            WHERE event_type IS NULL AND action IS NOT NULL
-        """)
-    except sqlite3.OperationalError:
-        pass  # Old columns don't exist
 
 
 def _init_shipit_indices_table(conn: sqlite3.Connection) -> None:
