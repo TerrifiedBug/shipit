@@ -9,6 +9,7 @@ on:
       - 'backend/**'
       - 'Dockerfile'
       - 'deploy/**'
+      - 'nginx/**'
       - '.github/workflows/docker.yml'
     tags:
       - 'v*'
