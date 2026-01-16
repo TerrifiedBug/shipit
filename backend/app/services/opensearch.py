@@ -2,7 +2,7 @@ import time
 from typing import Any
 
 from opensearchpy import OpenSearch, helpers
-from opensearchpy.exceptions import ConnectionError, TransportError
+from opensearchpy.exceptions import AuthorizationException, ConnectionError, TransportError
 
 from app.config import settings
 
@@ -160,22 +160,38 @@ def validate_index_for_ingestion(index_name: str) -> dict[str, Any]:
         ValueError: If index exists but not tracked and strict mode is enabled
     """
     from app.services.database import is_index_tracked
+    import logging
 
-    client = get_client()
-
-    # Check if index exists in OpenSearch
-    exists = client.indices.exists(index=index_name)
-
-    if not exists:
-        # New index - will need to be tracked after creation
-        return {"exists": False, "tracked": False, "requires_tracking": True}
-
-    # Index exists - check if it's tracked by ShipIt
+    # First check if it's tracked by ShipIt (doesn't require OpenSearch call)
     tracked = is_index_tracked(index_name)
 
     if tracked:
         # Tracked index - safe to write, no additional tracking needed
         return {"exists": True, "tracked": True, "requires_tracking": False}
+
+    # Try to check if index exists in OpenSearch
+    try:
+        client = get_client()
+        exists = client.indices.exists(index=index_name)
+    except AuthorizationException as e:
+        # Permission denied - fail safely to prevent accidental writes to external indices
+        logging.error(f"Permission denied checking if index '{index_name}' exists: {e}")
+        raise ValueError(
+            f"Cannot verify if index '{index_name}' exists - permission denied. "
+            f"The OpenSearch user needs 'indices:admin/exists' permission, or the index "
+            f"must be pre-created and tracked by ShipIt."
+        )
+    except (ConnectionError, TransportError) as e:
+        # Can't connect - fail with clear error
+        logging.error(f"Could not connect to OpenSearch to check index '{index_name}': {e}")
+        raise ValueError(
+            f"Cannot connect to OpenSearch to verify index '{index_name}'. "
+            f"Please check OpenSearch connection settings."
+        )
+
+    if not exists:
+        # New index - will need to be tracked after creation
+        return {"exists": False, "tracked": False, "requires_tracking": True}
 
     # External index (exists but not tracked)
     if settings.strict_index_mode:
