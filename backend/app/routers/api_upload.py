@@ -63,9 +63,9 @@ async def api_upload(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Save uploaded file to temp location
+    # Save uploaded file to temp location (must be under data_dir for path validation)
     suffix = Path(file.filename).suffix if file.filename else ".tmp"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=settings.data_dir) as tmp:
         content = await file.read()
         tmp.write(content)
         tmp.flush()
