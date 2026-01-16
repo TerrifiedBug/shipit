@@ -134,14 +134,14 @@ export function Upload({ onUploadComplete }: UploadProps) {
                     <input
                       type="file"
                       className="hidden"
-                      accept=".json,.csv,.tsv,.ltsv,.log"
+                      accept=".json,.csv,.tsv,.ltsv,.log,.txt,.ndjson,.jsonl"
                       multiple
                       onChange={handleFileInput}
                     />
                   </label>
                 </p>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Supports JSON, CSV, TSV, LTSV, and LOG files
+                  Supports JSON, NDJSON, CSV, TSV, LTSV, and Syslog formats
                 </p>
               </div>
             </>

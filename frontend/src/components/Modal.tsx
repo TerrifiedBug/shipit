@@ -1,4 +1,4 @@
-import { useEffect, useRef, ReactNode } from 'react';
+import { useEffect, useRef, useCallback, ReactNode } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -8,6 +8,8 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
   closeOnBackdrop?: boolean;
   closeOnEsc?: boolean;
+  isDirty?: boolean;
+  dirtyMessage?: string;
 }
 
 const sizeClasses = {
@@ -26,8 +28,21 @@ export function Modal({
   size = 'md',
   closeOnBackdrop = true,
   closeOnEsc = true,
+  isDirty = false,
+  dirtyMessage = 'You have unsaved changes. Discard them?',
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
+
+  // Wrap onClose with confirmation check for dirty state
+  const handleClose = useCallback(() => {
+    if (isDirty) {
+      if (window.confirm(dirtyMessage)) {
+        onClose();
+      }
+    } else {
+      onClose();
+    }
+  }, [isDirty, dirtyMessage, onClose]);
 
   // Handle ESC key
   useEffect(() => {
@@ -36,13 +51,13 @@ export function Modal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        handleClose();
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, closeOnEsc]);
+  }, [isOpen, handleClose, closeOnEsc]);
 
   // Lock body scroll when modal is open
   useEffect(() => {
@@ -70,7 +85,7 @@ export function Modal({
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (closeOnBackdrop && e.target === e.currentTarget) {
-      onClose();
+      handleClose();
     }
   };
 
@@ -92,7 +107,7 @@ export function Modal({
               {title}
             </h2>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
               aria-label="Close"
             >

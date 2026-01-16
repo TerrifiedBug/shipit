@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AdminUser, listUsers, createUser, updateUser, deleteUser, activateUser, deactivateUser } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,16 +29,35 @@ export function Users({ onClose }: UsersProps) {
   const [editNewPassword, setEditNewPassword] = useState('');
   const [updating, setUpdating] = useState(false);
 
+  // Check if any form has unsaved changes
+  const isCreateDirty = showCreateForm && (createEmail.trim() || createName.trim() || createPassword);
+  const isEditDirty = useMemo(() => {
+    if (!editingUser) return false;
+    return editName !== (editingUser.name || '') || editIsAdmin !== editingUser.is_admin || editNewPassword.length > 0;
+  }, [editingUser, editName, editIsAdmin, editNewPassword]);
+  const isDirty = isCreateDirty || isEditDirty;
+
+  // Wrap onClose with dirty state confirmation
+  const handleClose = useCallback(() => {
+    if (isDirty) {
+      if (window.confirm('You have unsaved changes. Discard them?')) {
+        onClose();
+      }
+    } else {
+      onClose();
+    }
+  }, [isDirty, onClose]);
+
   // Handle ESC key to close modal (only if no dialogs are open)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !userToDelete && !editingUser && !showCreateForm) {
-        onClose();
+        handleClose();
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, userToDelete, editingUser, showCreateForm]);
+  }, [handleClose, userToDelete, editingUser, showCreateForm]);
 
   useEffect(() => {
     loadUsers();
@@ -153,7 +172,7 @@ export function Users({ onClose }: UsersProps) {
   // Handle backdrop click
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget && !userToDelete && !editingUser && !showCreateForm) {
-      onClose();
+      handleClose();
     }
   };
 
@@ -166,7 +185,7 @@ export function Users({ onClose }: UsersProps) {
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">User Management</h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
