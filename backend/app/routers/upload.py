@@ -248,6 +248,8 @@ def _run_ingestion_task(
     timestamp_field: str | None,
     track_index: bool = False,
     user_id: str | None = None,
+    include_filename: bool = False,
+    filename_field: str = "_source_file",
 ):
     """Run ingestion in a background thread."""
     start_time = time.time()
@@ -296,6 +298,8 @@ def _run_ingestion_task(
                 excluded_fields=excluded_fields,
                 timestamp_field=timestamp_field,
                 progress_callback=progress_callback,
+                include_filename=include_filename,
+                filename_field=filename_field,
             )
 
             # Accumulate totals after each file
@@ -438,6 +442,8 @@ async def start_ingest(upload_id: str, request: IngestRequest, http_request: Req
             request.timestamp_field,
             index_meta["requires_tracking"],
             user_id,
+            request.include_filename,
+            request.filename_field,
         ),
         daemon=True,
     )
