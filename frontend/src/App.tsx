@@ -11,6 +11,7 @@ import { PasswordChangeModal } from './components/PasswordChangeModal';
 import { IngestResponse, UploadResponse, deletePendingUpload } from './api/client';
 import { useTheme } from './contexts/ThemeContext';
 import { useAuth } from './contexts/AuthContext';
+import { useVersion } from './hooks/useVersion';
 
 type AppState = 'upload' | 'preview' | 'configure' | 'result';
 
@@ -121,6 +122,7 @@ function LoadingSpinner() {
 
 function App() {
   const { user, loading, needsSetup, passwordChangeRequired, login, clearPasswordChangeRequired } = useAuth();
+  const { currentVersion, updateAvailable, releaseUrl } = useVersion();
   const [state, setState] = useState<AppState>('upload');
   const [uploadData, setUploadData] = useState<UploadResponse | null>(null);
   const [ingestResult, setIngestResult] = useState<IngestResponse | null>(null);
@@ -202,7 +204,17 @@ function App() {
               <span className="text-3xl" role="img" aria-label="ShipIt logo">🚀</span>
               <div className="flex items-baseline gap-2">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ShipIt</h1>
-                <span className="text-xs text-gray-400 dark:text-gray-500">v1.0.0</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500">v{currentVersion}</span>
+                {updateAvailable && releaseUrl && (
+                  <a
+                    href={releaseUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-500 hover:text-blue-600 hover:underline"
+                  >
+                    Update available
+                  </a>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2">
