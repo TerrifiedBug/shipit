@@ -2,6 +2,25 @@
 
 Self-service file ingestion tool for OpenSearch. Designed for ad-hoc data uploads during investigations, troubleshooting, and analysis - quickly get JSON, CSV, TSV, LTSV, or syslog data into OpenSearch without writing ingestion pipelines.
 
+## Why ShipIt?
+
+In many organizations, OpenSearch infrastructure is managed by a dedicated platform or SRE team, while the users who need to query and analyze data sit in different teams - security analysts, support engineers, business analysts, and others. These users often need to get ad-hoc data into OpenSearch for investigation or analysis, but they:
+
+- Don't have access to Fluentd, Fluentbit, or Logstash configurations
+- Aren't familiar with writing ingestion pipelines
+- Just need a quick way to upload a CSV export or JSON log file
+- Want to correlate external data with existing OpenSearch indices
+
+ShipIt bridges this gap by providing a simple web interface for self-service data ingestion. No pipeline configuration, no YAML files, no command-line tools - just drag, drop, and query.
+
+> **Note**: ShipIt is a controlled self-service tool for ad-hoc investigations and analysis. It is not a replacement for proper ingestion pipelines and is not intended for production data flows. Use it for temporary, exploratory work where you need data in OpenSearch quickly.
+
+## Tech Stack
+
+- **Frontend**: React + TypeScript with Vite for fast builds and Tailwind CSS for styling
+- **Backend**: Python with FastAPI - chosen for its async performance, excellent OpenSearch client support, and readable codebase that's easy to extend
+- **Deployment**: Single Docker container with nginx reverse proxy, making it simple to deploy anywhere
+
 ## Features
 
 - **Authentication**: Local users, OIDC SSO, and API keys for automation
