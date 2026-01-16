@@ -84,12 +84,12 @@ class TestDeleteIndexEndpoint:
         """Helper to setup and login, returns cookies."""
         client.post("/api/auth/setup", json={
             "email": "indextest@example.com",
-            "password": "password",
+            "password": "Password123",
             "name": "Index Test User",
         })
         response = client.post("/api/auth/login", json={
             "email": "indextest@example.com",
-            "password": "password",
+            "password": "Password123",
         })
         return response.cookies
 

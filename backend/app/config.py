@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     session_secret: str = "change-me-in-production"
     session_duration_hours: int = 8
 
+    # Security hardening
+    login_rate_limit_per_minute: int = 5  # Max login attempts per IP per minute
+    account_lockout_attempts: int = 5  # Lock account after N failed attempts
+    account_lockout_minutes: int = 15  # Lockout duration in minutes
+    password_min_length: int = 8
+    password_require_uppercase: bool = True
+    password_require_lowercase: bool = True
+    password_require_digit: bool = True
+    password_require_special: bool = False  # Optional by default
+
     # OIDC settings
     oidc_enabled: bool = False
     oidc_issuer_url: Optional[str] = None
@@ -53,6 +63,12 @@ class Settings(BaseSettings):
         """Get OIDC redirect URI derived from APP_URL."""
         base = self.app_url.rstrip("/") if self.app_url else "http://localhost:8080"
         return f"{base}/api/auth/callback"
+
+    def is_secure_cookies(self) -> bool:
+        """Determine if secure cookies should be used (HTTPS environment)."""
+        if self.app_url:
+            return self.app_url.startswith("https://")
+        return False
 
 
 settings = Settings()
