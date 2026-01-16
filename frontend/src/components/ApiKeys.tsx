@@ -17,6 +17,17 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
   const { addToast } = useToast();
 
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !keyToDelete && !newlyCreatedKey) {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, keyToDelete, newlyCreatedKey]);
+
   useEffect(() => {
     loadKeys();
   }, []);
@@ -75,8 +86,18 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
     return new Date(expiresAt) < new Date();
   };
 
+  // Handle backdrop click
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && !keyToDelete && !newlyCreatedKey) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={handleBackdropClick}
+    >
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">API Keys</h2>

@@ -40,6 +40,7 @@ class UserResponse(BaseModel):
     email: str
     name: Optional[str]
     is_admin: bool
+    is_active: bool
     auth_type: str
     created_at: str
     last_login: Optional[str]
@@ -56,6 +57,7 @@ def list_users(admin: dict = Depends(require_admin)):
                 email=u["email"],
                 name=u["name"],
                 is_admin=bool(u["is_admin"]),
+                is_active=bool(u.get("is_active", True)),
                 auth_type=u["auth_type"],
                 created_at=u["created_at"],
                 last_login=u["last_login"],
@@ -106,6 +108,7 @@ def create_user(request: CreateUserRequest, admin: dict = Depends(require_admin)
         email=user["email"],
         name=user["name"],
         is_admin=bool(user["is_admin"]),
+        is_active=bool(user.get("is_active", True)),
         auth_type=user["auth_type"],
         created_at=user["created_at"],
         last_login=user["last_login"],
@@ -167,6 +170,7 @@ def update_user(
         email=updated["email"],
         name=updated["name"],
         is_admin=bool(updated["is_admin"]),
+        is_active=bool(updated.get("is_active", True)),
         auth_type=updated["auth_type"],
         created_at=updated["created_at"],
         last_login=updated["last_login"],
@@ -203,3 +207,76 @@ def delete_user(user_id: str, admin: dict = Depends(require_admin)):
     )
 
     return {"message": f"User {user['email']} deleted"}
+
+
+@router.post("/users/{user_id}/deactivate")
+def deactivate_user(user_id: str, admin: dict = Depends(require_admin)):
+    """Deactivate a user account (prevent login without deleting)."""
+    user = db.get_user_by_id(user_id)
+    if not user or user.get("deleted_at"):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Prevent admin from deactivating themselves
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
+
+    # Check if this would leave no active admins
+    if user.get("is_admin") and user.get("is_active", True):
+        active_admin_count = sum(
+            1 for u in db.list_users(include_deleted=False)
+            if u.get("is_admin") and u.get("is_active", True)
+        )
+        if active_admin_count <= 1:
+            raise HTTPException(
+                status_code=400, detail="Cannot deactivate the last active admin"
+            )
+
+    db.deactivate_user(user_id)
+
+    # Audit log
+    db.create_audit_log(
+        user_id=admin["id"],
+        action="deactivate_user",
+        target=user["email"],
+    )
+
+    updated = db.get_user_by_id(user_id)
+    return UserResponse(
+        id=updated["id"],
+        email=updated["email"],
+        name=updated["name"],
+        is_admin=bool(updated["is_admin"]),
+        is_active=bool(updated.get("is_active", True)),
+        auth_type=updated["auth_type"],
+        created_at=updated["created_at"],
+        last_login=updated["last_login"],
+    )
+
+
+@router.post("/users/{user_id}/activate")
+def activate_user(user_id: str, admin: dict = Depends(require_admin)):
+    """Reactivate a deactivated user account."""
+    user = db.get_user_by_id(user_id)
+    if not user or user.get("deleted_at"):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db.reactivate_user(user_id)
+
+    # Audit log
+    db.create_audit_log(
+        user_id=admin["id"],
+        action="activate_user",
+        target=user["email"],
+    )
+
+    updated = db.get_user_by_id(user_id)
+    return UserResponse(
+        id=updated["id"],
+        email=updated["email"],
+        name=updated["name"],
+        is_admin=bool(updated["is_admin"]),
+        is_active=bool(updated.get("is_active", True)),
+        auth_type=updated["auth_type"],
+        created_at=updated["created_at"],
+        last_login=updated["last_login"],
+    )
