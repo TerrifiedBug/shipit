@@ -48,16 +48,53 @@ export function Users({ onClose }: UsersProps) {
     }
   }, [isDirty, onClose]);
 
-  // Handle ESC key to close modal (only if no dialogs are open)
+  // Close edit dialog with dirty check
+  const handleCloseEdit = useCallback(() => {
+    if (isEditDirty) {
+      if (window.confirm('You have unsaved changes. Discard them?')) {
+        setEditingUser(null);
+      }
+    } else {
+      setEditingUser(null);
+    }
+  }, [isEditDirty]);
+
+  // Handle ESC key - close innermost dialog first
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !userToDelete && !editingUser && !showCreateForm) {
+      if (e.key === 'Escape') {
+        // Don't close anything if delete confirmation is open
+        if (userToDelete) return;
+
+        // Close edit dialog if open
+        if (editingUser) {
+          handleCloseEdit();
+          return;
+        }
+
+        // Close create form if open (just collapse it, no confirmation needed)
+        if (showCreateForm) {
+          if (isCreateDirty) {
+            if (window.confirm('You have unsaved changes. Discard them?')) {
+              setShowCreateForm(false);
+              setCreateEmail('');
+              setCreateName('');
+              setCreatePassword('');
+              setCreateIsAdmin(false);
+            }
+          } else {
+            setShowCreateForm(false);
+          }
+          return;
+        }
+
+        // Close main modal
         handleClose();
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [handleClose, userToDelete, editingUser, showCreateForm]);
+  }, [handleClose, handleCloseEdit, userToDelete, editingUser, showCreateForm, isCreateDirty]);
 
   useEffect(() => {
     loadUsers();
@@ -428,7 +465,10 @@ export function Users({ onClose }: UsersProps) {
 
         {/* Edit User Dialog */}
         {editingUser && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]"
+            onClick={(e) => e.target === e.currentTarget && handleCloseEdit()}
+          >
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                 Edit User: {editingUser.email}
@@ -491,7 +531,7 @@ export function Users({ onClose }: UsersProps) {
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     type="button"
-                    onClick={() => setEditingUser(null)}
+                    onClick={handleCloseEdit}
                     className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md"
                   >
                     Cancel
