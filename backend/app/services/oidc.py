@@ -1,4 +1,6 @@
 """OIDC authentication service."""
+from __future__ import annotations
+
 import secrets
 from dataclasses import dataclass
 from urllib.parse import urlencode

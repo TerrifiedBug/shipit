@@ -1,4 +1,6 @@
 """Audit logging service for tracking security-relevant events."""
+from __future__ import annotations
+
 from app.services import database as db
 
 

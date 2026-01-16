@@ -117,7 +117,7 @@ class TestAuthService:
         hashed = hash_password(password)
         assert hashed != password
         assert verify_password(password, hashed) is True
-        assert verify_password("wrongpassword", hashed) is False
+        assert verify_password("WrongPassword123", hashed) is False
 
     def test_create_and_verify_session_token(self):
         user_id = "user-123"
@@ -143,7 +143,7 @@ class TestAuthEndpoints:
     def test_setup_first_user(self, db):
         response = client.post("/api/auth/setup", json={
             "email": "admin@example.com",
-            "password": "adminpassword",
+            "password": "AdminPass123",
             "name": "Admin User",
         })
         assert response.status_code == 200
@@ -155,13 +155,13 @@ class TestAuthEndpoints:
         # Create first user
         client.post("/api/auth/setup", json={
             "email": "admin@example.com",
-            "password": "adminpassword",
+            "password": "AdminPass123",
             "name": "Admin",
         })
         # Try to create another via setup
         response = client.post("/api/auth/setup", json={
             "email": "hacker@example.com",
-            "password": "hackpass",
+            "password": "HackPass123",
             "name": "Hacker",
         })
         assert response.status_code == 400
@@ -170,13 +170,13 @@ class TestAuthEndpoints:
         # Setup user first
         client.post("/api/auth/setup", json={
             "email": "login@example.com",
-            "password": "testpassword",
+            "password": "TestPass123",
             "name": "Login User",
         })
         # Login
         response = client.post("/api/auth/login", json={
             "email": "login@example.com",
-            "password": "testpassword",
+            "password": "TestPass123",
         })
         assert response.status_code == 200
         assert "session" in response.cookies
@@ -184,12 +184,12 @@ class TestAuthEndpoints:
     def test_login_wrong_password(self, db):
         client.post("/api/auth/setup", json={
             "email": "wrong@example.com",
-            "password": "correctpassword",
+            "password": "CorrectPass123",
             "name": "User",
         })
         response = client.post("/api/auth/login", json={
             "email": "wrong@example.com",
-            "password": "wrongpassword",
+            "password": "WrongPass123",
         })
         assert response.status_code == 401
 
@@ -198,7 +198,7 @@ class TestAuthEndpoints:
         # Setup user first
         client.post("/api/auth/setup", json={
             "email": "deactivated@example.com",
-            "password": "testpassword",
+            "password": "TestPass123",
             "name": "Deactivated User",
         })
         # Deactivate the user
@@ -207,7 +207,7 @@ class TestAuthEndpoints:
         # Try to login - should fail with 403
         response = client.post("/api/auth/login", json={
             "email": "deactivated@example.com",
-            "password": "testpassword",
+            "password": "TestPass123",
         })
         assert response.status_code == 403
         assert "deactivated" in response.json()["detail"].lower()
@@ -216,12 +216,12 @@ class TestAuthEndpoints:
         # Setup and login
         client.post("/api/auth/setup", json={
             "email": "me@example.com",
-            "password": "password",
+            "password": "Password123",
             "name": "Me User",
         })
         login_response = client.post("/api/auth/login", json={
             "email": "me@example.com",
-            "password": "password",
+            "password": "Password123",
         })
         # Get me
         response = client.get("/api/auth/me", cookies=login_response.cookies)
@@ -236,12 +236,12 @@ class TestAuthEndpoints:
         # Setup and login
         client.post("/api/auth/setup", json={
             "email": "logout@example.com",
-            "password": "password",
+            "password": "Password123",
             "name": "Logout User",
         })
         login_response = client.post("/api/auth/login", json={
             "email": "logout@example.com",
-            "password": "password",
+            "password": "Password123",
         })
         # Logout
         logout_response = client.post("/api/auth/logout", cookies=login_response.cookies)
@@ -256,12 +256,12 @@ class TestApiKeyEndpoints:
         """Helper to setup and login, returns cookies."""
         client.post("/api/auth/setup", json={
             "email": "keytest@example.com",
-            "password": "password",
+            "password": "Password123",
             "name": "Key Test User",
         })
         response = client.post("/api/auth/login", json={
             "email": "keytest@example.com",
-            "password": "password",
+            "password": "Password123",
         })
         return response.cookies
 
@@ -330,13 +330,13 @@ class TestPasswordChange:
 
     def test_change_password_success(self, db):
         """Test successful password change."""
-        cookies = self._setup_and_login(db, "changepw@example.com", "oldpassword123")
+        cookies = self._setup_and_login(db, "changepw@example.com", "OldPassword123")
 
         response = client.post(
             "/api/auth/change-password",
             json={
-                "current_password": "oldpassword123",
-                "new_password": "newpassword456"
+                "current_password": "OldPassword123",
+                "new_password": "NewPassword456"
             },
             cookies=cookies
         )
@@ -346,19 +346,19 @@ class TestPasswordChange:
         # Verify can login with new password
         login_response = client.post("/api/auth/login", json={
             "email": "changepw@example.com",
-            "password": "newpassword456"
+            "password": "NewPassword456"
         })
         assert login_response.status_code == 200
 
     def test_change_password_wrong_current(self, db):
         """Test password change with wrong current password."""
-        cookies = self._setup_and_login(db, "wrongpw@example.com", "correctpassword")
+        cookies = self._setup_and_login(db, "wrongpw@example.com", "CorrectPassword123")
 
         response = client.post(
             "/api/auth/change-password",
             json={
-                "current_password": "wrongpassword",
-                "new_password": "newpassword123"
+                "current_password": "WrongPassword123",
+                "new_password": "NewPassword123"
             },
             cookies=cookies
         )
@@ -379,7 +379,7 @@ class TestPasswordChange:
             "/api/auth/change-password",
             json={
                 "current_password": "anypass",
-                "new_password": "newpassword123"
+                "new_password": "NewPassword123"
             },
             cookies={"session": token}
         )
@@ -389,12 +389,12 @@ class TestPasswordChange:
 
     def test_change_password_too_short(self, db):
         """Test password change with too short new password."""
-        cookies = self._setup_and_login(db, "shortpw@example.com", "oldpassword123")
+        cookies = self._setup_and_login(db, "shortpw@example.com", "OldPassword123")
 
         response = client.post(
             "/api/auth/change-password",
             json={
-                "current_password": "oldpassword123",
+                "current_password": "OldPassword123",
                 "new_password": "short"
             },
             cookies=cookies
@@ -418,12 +418,12 @@ class TestAuthMiddleware:
         # Setup and login
         client.post("/api/auth/setup", json={
             "email": "middleware@example.com",
-            "password": "password",
+            "password": "Password123",
             "name": "Middleware User",
         })
         login_response = client.post("/api/auth/login", json={
             "email": "middleware@example.com",
-            "password": "password",
+            "password": "Password123",
         })
         # Access protected endpoint
         response = client.get("/api/history", cookies=login_response.cookies)
