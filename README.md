@@ -277,25 +277,3 @@ curl -X POST https://shipit.example.com/api/v1/upload \
 ```
 
 If any records fail, `status` will be `completed_with_errors` and an `errors` array will be included.
-
-## Roadmap
-
-### Full Elasticsearch Support
-- Add compatibility with Elasticsearch clusters
-- Auto-detect OpenSearch vs Elasticsearch from cluster info
-- Use appropriate client library based on target
-
-### Logfmt Parser
-- Support for logfmt structured logs (`key=value key2="quoted value"`)
-- Popular in Go ecosystem (Heroku, Prometheus, etc.)
-- Auto-detect in `.log` files alongside LTSV and syslog
-
-### Custom Parsers - Regex/Grok
-- Ingest unstructured log files (plain text)
-- Define regex with named capture groups or select grok patterns
-- New "Parser" step between Upload and Preview
-
-### Field Type Coercion
-- CSV columns are always strings; convert to numbers, booleans, dates
-- Per-field type dropdown in Configure step
-- Custom date format specification
