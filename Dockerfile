@@ -1,15 +1,18 @@
 # Stage 1: Build frontend
 FROM node:20-alpine AS frontend-build
 
+# Version ARG busts cache when version changes
+ARG APP_VERSION=dev
+
 WORKDIR /app/frontend
 
 # Install dependencies
 COPY frontend/package.json ./
 RUN npm install
 
-# Build production bundle
+# Build production bundle (version baked in via vite.config.ts)
 COPY frontend/ ./
-RUN npm run build
+RUN echo "Building version: $APP_VERSION" && npm run build
 
 
 # Stage 2: Runtime
