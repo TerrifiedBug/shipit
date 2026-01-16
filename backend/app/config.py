@@ -36,10 +36,11 @@ class Settings(BaseSettings):
         env_file = ".env"
 
     def get_cors_origins(self) -> list[str]:
-        """Get CORS origins from APP_URL or default to localhost for dev."""
+        """Get CORS origins from APP_URL plus localhost for dev."""
+        origins = ["http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:5173"]
         if self.app_url:
-            return [self.app_url.rstrip("/")]
-        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+            origins.append(self.app_url.rstrip("/"))
+        return origins
 
     def get_oidc_redirect_uri(self) -> str:
         """Get OIDC redirect URI derived from APP_URL."""
