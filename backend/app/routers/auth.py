@@ -46,8 +46,8 @@ def get_current_user(request: Request) -> dict | None:
                 if expires_at > datetime.utcnow():
                     update_api_key_last_used(api_key["id"])
                     user = get_user_by_id(api_key["user_id"])
-                    # Check if user is deleted
-                    if user and user.get("deleted_at"):
+                    # Check if user is deleted or deactivated
+                    if user and (user.get("deleted_at") or not user.get("is_active", True)):
                         return None
                     return user
             return None
@@ -60,8 +60,8 @@ def get_current_user(request: Request) -> dict | None:
     if not payload:
         return None
     user = get_user_by_id(payload["sub"])
-    # Check if user is deleted
-    if user and user.get("deleted_at"):
+    # Check if user is deleted or deactivated
+    if user and (user.get("deleted_at") or not user.get("is_active", True)):
         return None
     return user
 
@@ -118,6 +118,10 @@ def login(request: LoginRequest, response: Response):
     # Check if user is deleted
     if user.get("deleted_at"):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # Check if user is deactivated
+    if not user.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Account has been deactivated")
 
     if not user["password_hash"]:
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -281,11 +285,11 @@ async def oidc_callback(
         user = get_user_by_email(user_info.email)
 
         if user:
-            # Check if user is deleted
-            if user.get("deleted_at"):
+            # Check if user is deleted or deactivated
+            if user.get("deleted_at") or not user.get("is_active", True):
                 frontend_url = settings.app_url or "http://localhost:5173"
                 return RedirectResponse(
-                    url=f"{frontend_url}?error=Account has been disabled",
+                    url=f"{frontend_url}?error=Account has been deactivated",
                     status_code=302,
                 )
 

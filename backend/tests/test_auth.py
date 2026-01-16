@@ -16,6 +16,7 @@ from app.services.database import (
     delete_api_key,
     create_audit_log,
     list_audit_logs,
+    deactivate_user,
 )
 
 
@@ -185,6 +186,25 @@ class TestAuthEndpoints:
             "password": "wrongpassword",
         })
         assert response.status_code == 401
+
+    def test_login_deactivated_user(self, db):
+        """Test that deactivated users cannot login."""
+        # Setup user first
+        client.post("/api/auth/setup", json={
+            "email": "deactivated@example.com",
+            "password": "testpassword",
+            "name": "Deactivated User",
+        })
+        # Deactivate the user
+        user = get_user_by_email("deactivated@example.com")
+        deactivate_user(user["id"])
+        # Try to login - should fail with 403
+        response = client.post("/api/auth/login", json={
+            "email": "deactivated@example.com",
+            "password": "testpassword",
+        })
+        assert response.status_code == 403
+        assert "deactivated" in response.json()["detail"].lower()
 
     def test_me_authenticated(self, db):
         # Setup and login
