@@ -176,7 +176,7 @@ def change_password(request: ChangePasswordRequest, user: dict = Depends(require
     # Get fresh user data
     current_user = get_user_by_id(user["id"])
     if not current_user or current_user["auth_type"] != "local":
-        raise HTTPException(status_code=400, detail="Cannot change password for this account")
+        raise HTTPException(status_code=403, detail="Cannot change password for this account")
 
     # Verify current password
     if not verify_password(request.current_password, current_user["password_hash"]):

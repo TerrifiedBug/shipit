@@ -308,6 +308,96 @@ class TestApiKeyEndpoints:
         assert response.json()["email"] == "keytest@example.com"
 
 
+class TestPasswordChange:
+    def _setup_and_login(self, db, email, password):
+        """Helper to setup user and return login cookies."""
+        client.post("/api/auth/setup", json={
+            "email": email,
+            "password": password,
+            "name": "Test User",
+        })
+        response = client.post("/api/auth/login", json={
+            "email": email,
+            "password": password,
+        })
+        return response.cookies
+
+    def test_change_password_success(self, db):
+        """Test successful password change."""
+        cookies = self._setup_and_login(db, "changepw@example.com", "oldpassword123")
+
+        response = client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "oldpassword123",
+                "new_password": "newpassword456"
+            },
+            cookies=cookies
+        )
+
+        assert response.status_code == 200
+
+        # Verify can login with new password
+        login_response = client.post("/api/auth/login", json={
+            "email": "changepw@example.com",
+            "password": "newpassword456"
+        })
+        assert login_response.status_code == 200
+
+    def test_change_password_wrong_current(self, db):
+        """Test password change with wrong current password."""
+        cookies = self._setup_and_login(db, "wrongpw@example.com", "correctpassword")
+
+        response = client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "wrongpassword",
+                "new_password": "newpassword123"
+            },
+            cookies=cookies
+        )
+
+        assert response.status_code == 401
+        assert "current password" in response.json()["detail"].lower()
+
+    def test_change_password_oidc_user(self, db):
+        """Test that OIDC users cannot change password."""
+        from app.services.database import create_user
+        from app.services.auth import create_session_token
+
+        # Create an OIDC user directly in the database
+        user = create_user("oidc@example.com", "OIDC User", "oidc", is_admin=False)
+        token = create_session_token(user["id"])
+
+        response = client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "anypass",
+                "new_password": "newpassword123"
+            },
+            cookies={"session": token}
+        )
+
+        assert response.status_code == 403
+        assert "cannot change password" in response.json()["detail"].lower()
+
+    def test_change_password_too_short(self, db):
+        """Test password change with too short new password."""
+        cookies = self._setup_and_login(db, "shortpw@example.com", "oldpassword123")
+
+        response = client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "oldpassword123",
+                "new_password": "short"
+            },
+            cookies=cookies
+        )
+
+        assert response.status_code == 400
+        assert "8 characters" in response.json()["detail"]
+
+
 class TestAuthMiddleware:
     def test_protected_endpoint_requires_auth(self, db):
         # /api/history should require auth
