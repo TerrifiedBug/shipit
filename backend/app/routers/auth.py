@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
 
 from app.config import settings
+from app.services import audit
 from app.services.auth import hash_password, verify_password, create_session_token, verify_session_token, hash_api_key
 from app.services.database import (
     create_user,
@@ -18,6 +19,16 @@ from app.services.database import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _get_client_ip(request: Request | None) -> str:
+    """Extract client IP from request."""
+    if not request:
+        return "unknown"
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 class SetupRequest(BaseModel):
@@ -109,27 +120,37 @@ def setup_first_user(request: SetupRequest, response: Response):
 
 
 @router.post("/login")
-def login(request: LoginRequest, response: Response):
+def login(request: LoginRequest, response: Response, http_request: Request = None):
     """Login with email and password."""
+    client_ip = _get_client_ip(http_request)
+
     user = get_user_by_email(request.email)
     if not user or user["auth_type"] != "local":
+        audit.log_login_failed(request.email, "invalid_credentials", client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Check if user is deleted
     if user.get("deleted_at"):
+        audit.log_login_failed(request.email, "user_deleted", client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Check if user is deactivated
     if not user.get("is_active", True):
+        audit.log_login_failed(request.email, "account_deactivated", client_ip)
         raise HTTPException(status_code=403, detail="Account has been deactivated")
 
     if not user["password_hash"]:
+        audit.log_login_failed(request.email, "no_password_set", client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not verify_password(request.password, user["password_hash"]):
+        audit.log_login_failed(request.email, "invalid_password", client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     update_user_last_login(user["id"])
+
+    # Log successful login
+    audit.log_login_success(user["id"], user["email"], client_ip)
 
     token = create_session_token(user["id"])
     response.set_cookie(
@@ -157,8 +178,13 @@ def get_me(user: dict = Depends(require_auth)):
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(response: Response, http_request: Request = None):
     """Logout - clear session cookie."""
+    # Log logout if we can identify the user
+    user = get_current_user(http_request) if http_request else None
+    if user:
+        audit.log_logout(user["id"], user.get("email", ""), _get_client_ip(http_request))
+
     response.delete_cookie(key="session")
     return {"message": "Logged out"}
 
@@ -312,6 +338,10 @@ async def oidc_callback(
                 is_admin=is_admin,
             )
             update_user_last_login(user["id"])
+
+        # Log successful OIDC login
+        client_ip = _get_client_ip(request)
+        audit.log_login_success(user["id"], user["email"], client_ip)
 
         # Create session
         token = create_session_token(user["id"])

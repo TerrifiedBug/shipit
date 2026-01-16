@@ -95,17 +95,47 @@ def _init_api_keys_table(conn: sqlite3.Connection) -> None:
 
 
 def _init_audit_log_table(conn: sqlite3.Connection) -> None:
-    """Create audit_log table."""
+    """Create audit_log table for comprehensive audit logging."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_log (
             id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES users(id),
-            action TEXT NOT NULL,
-            target TEXT,
+            event_type TEXT NOT NULL,
+            actor_id TEXT,
+            actor_name TEXT,
+            target_type TEXT,
+            target_id TEXT,
             details TEXT,
+            ip_address TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at DESC)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log(event_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_actor_id ON audit_log(actor_id)")
+
+    # Migration: add new columns if they don't exist (for existing installs)
+    for column, definition in [
+        ("event_type", "TEXT"),
+        ("actor_id", "TEXT"),
+        ("actor_name", "TEXT"),
+        ("target_type", "TEXT"),
+        ("target_id", "TEXT"),
+        ("ip_address", "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE audit_log ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+    # Migrate old data: copy action to event_type, user_id to actor_id if needed
+    try:
+        conn.execute("""
+            UPDATE audit_log
+            SET event_type = action, actor_id = user_id
+            WHERE event_type IS NULL AND action IS NOT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass  # Old columns don't exist
 
 
 def _init_shipit_indices_table(conn: sqlite3.Connection) -> None:
@@ -605,47 +635,132 @@ def update_api_key_last_used(key_id: str) -> None:
 
 # Audit log functions
 
+# Event type constants
+AUDIT_EVENT_LOGIN_SUCCESS = "login_success"
+AUDIT_EVENT_LOGIN_FAILED = "login_failed"
+AUDIT_EVENT_LOGOUT = "logout"
+AUDIT_EVENT_USER_CREATED = "user_created"
+AUDIT_EVENT_USER_MODIFIED = "user_modified"
+AUDIT_EVENT_USER_DELETED = "user_deleted"
+AUDIT_EVENT_API_KEY_CREATED = "api_key_created"
+AUDIT_EVENT_API_KEY_DELETED = "api_key_deleted"
+AUDIT_EVENT_INDEX_CREATED = "index_created"
+AUDIT_EVENT_INDEX_DELETED = "index_deleted"
+AUDIT_EVENT_INGESTION_STARTED = "ingestion_started"
+AUDIT_EVENT_INGESTION_COMPLETED = "ingestion_completed"
+
 
 def create_audit_log(
-    user_id: str,
-    action: str,
-    target: str | None = None,
-    details: str | None = None,
+    event_type: str,
+    actor_id: str | None = None,
+    actor_name: str | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    details: dict | None = None,
+    ip_address: str | None = None,
 ) -> dict:
-    """Create an audit log entry."""
+    """Create an audit log entry.
+
+    Args:
+        event_type: Type of event (e.g., 'login_success', 'user_created')
+        actor_id: ID of the user who performed the action
+        actor_name: Name/email of the actor (for display when user is deleted)
+        target_type: Type of target (e.g., 'user', 'api_key', 'index')
+        target_id: ID of the target entity
+        details: Additional details as a dictionary (stored as JSON)
+        ip_address: IP address of the client
+
+    Returns:
+        The created audit log entry as a dictionary
+    """
     log_id = str(uuid.uuid4())
+    details_json = json.dumps(details) if details else None
+
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO audit_log (id, user_id, action, target, details)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO audit_log (id, event_type, actor_id, actor_name, target_type, target_id, details, ip_address)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (log_id, user_id, action, target, details),
+            (log_id, event_type, actor_id, actor_name, target_type, target_id, details_json, ip_address),
         )
         row = conn.execute("SELECT * FROM audit_log WHERE id = ?", (log_id,)).fetchone()
-    return dict(row)
+
+    result = dict(row)
+    if result.get("details"):
+        try:
+            result["details"] = json.loads(result["details"])
+        except json.JSONDecodeError:
+            pass
+    return result
 
 
 def list_audit_logs(
-    user_id: str | None = None,
-    action: str | None = None,
+    actor_id: str | None = None,
+    event_type: str | None = None,
+    target_type: str | None = None,
     limit: int = 100,
     offset: int = 0,
-) -> list[dict]:
-    """List audit logs with optional filters."""
+) -> tuple[list[dict], int]:
+    """List audit logs with optional filters.
+
+    Args:
+        actor_id: Filter by actor ID
+        event_type: Filter by event type
+        target_type: Filter by target type
+        limit: Maximum number of results
+        offset: Offset for pagination
+
+    Returns:
+        Tuple of (list of audit log entries, total count)
+    """
     query = "SELECT * FROM audit_log WHERE 1=1"
-    params = []
-    if user_id:
-        query += " AND user_id = ?"
-        params.append(user_id)
-    if action:
-        query += " AND action = ?"
-        params.append(action)
+    count_query = "SELECT COUNT(*) FROM audit_log WHERE 1=1"
+    params: list[Any] = []
+
+    if actor_id:
+        query += " AND actor_id = ?"
+        count_query += " AND actor_id = ?"
+        params.append(actor_id)
+    if event_type:
+        query += " AND event_type = ?"
+        count_query += " AND event_type = ?"
+        params.append(event_type)
+    if target_type:
+        query += " AND target_type = ?"
+        count_query += " AND target_type = ?"
+        params.append(target_type)
+
     query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-    params.extend([limit, offset])
+
     with get_connection() as conn:
+        # Get total count
+        total = conn.execute(count_query, params).fetchone()[0]
+
+        # Get paginated results
+        params.extend([limit, offset])
         rows = conn.execute(query, params).fetchall()
-    return [dict(row) for row in rows]
+
+    results = []
+    for row in rows:
+        entry = dict(row)
+        if entry.get("details"):
+            try:
+                entry["details"] = json.loads(entry["details"])
+            except json.JSONDecodeError:
+                pass
+        results.append(entry)
+
+    return results, total
+
+
+def get_audit_log_event_types() -> list[str]:
+    """Get list of distinct event types in audit log."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT event_type FROM audit_log ORDER BY event_type"
+        ).fetchall()
+    return [row[0] for row in rows if row[0]]
 
 
 # Index tracking functions

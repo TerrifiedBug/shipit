@@ -1,11 +1,20 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 
 from app.config import settings
+from app.services import audit
 from app.services.opensearch import delete_index
-from app.services.database import create_audit_log, mark_index_deleted, untrack_index
+from app.services.database import mark_index_deleted, untrack_index
 from app.routers.auth import require_auth
 
 router = APIRouter(prefix="/indexes", tags=["indexes"])
+
+
+def _get_client_ip(request: Request) -> str:
+    """Extract client IP from request."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 @router.delete("/{index_name}")
@@ -34,10 +43,11 @@ def delete_index_endpoint(
     untrack_index(index_name)
 
     # Audit log
-    create_audit_log(
-        user_id=user["id"],
-        action="delete_index",
-        target=index_name,
+    audit.log_index_deleted(
+        actor_id=user["id"],
+        actor_name=user.get("email", ""),
+        index_name=index_name,
+        ip_address=_get_client_ip(request),
     )
 
     return {"message": f"Index {index_name} deleted"}

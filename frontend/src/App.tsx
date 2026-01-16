@@ -7,6 +7,7 @@ import { History } from './components/History';
 import { Login } from './components/Login';
 import { ApiKeys } from './components/ApiKeys';
 import { Users } from './components/Users';
+import { Audit } from './components/Audit';
 import { PasswordChangeModal } from './components/PasswordChangeModal';
 import { IngestResponse, UploadResponse, deletePendingUpload } from './api/client';
 import { useTheme } from './contexts/ThemeContext';
@@ -129,6 +130,7 @@ function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
 
   // Track pending upload for cleanup on tab close
   const pendingUploadRef = useRef<string | null>(null);
@@ -220,12 +222,20 @@ function App() {
             <div className="flex items-center gap-2">
               <ThemeToggle />
               {user?.is_admin ? (
-                <button
-                  onClick={() => setShowUsers(true)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
-                >
-                  Users
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowAudit(true)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+                  >
+                    Audit
+                  </button>
+                  <button
+                    onClick={() => setShowUsers(true)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+                  >
+                    Users
+                  </button>
+                </>
               ) : null}
               <button
                 onClick={() => setShowApiKeys(true)}
@@ -248,6 +258,7 @@ function App() {
       {showHistory && <History onClose={() => setShowHistory(false)} />}
       {showApiKeys && <ApiKeys onClose={() => setShowApiKeys(false)} />}
       {showUsers && <Users onClose={() => setShowUsers(false)} />}
+      {showAudit && <Audit onClose={() => setShowAudit(false)} />}
       <main>
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
           {state === 'upload' && (

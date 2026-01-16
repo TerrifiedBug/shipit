@@ -15,7 +15,8 @@ from app.models import FieldInfo, IngestRequest, PreviewResponse, UploadResponse
 from app.services import database as db
 from app.services.ingestion import count_records, ingest_file
 from app.services.opensearch import validate_index_name, validate_index_for_ingestion
-from app.services.parser import detect_format, infer_fields, parse_preview
+from app.services.parser import detect_format, infer_fields, parse_preview, validate_field_count
+from app.services.rate_limit import check_upload_rate_limit
 
 router = APIRouter()
 
@@ -69,11 +70,37 @@ def _validate_upload_id(upload_id: str) -> str:
         raise HTTPException(status_code=400, detail="Invalid upload ID format")
 
 
+def _get_client_ip(request: Request | None) -> str:
+    """Extract client IP from request, checking X-Forwarded-For for proxies."""
+    if not request:
+        return "unknown"
+    # Check X-Forwarded-For header (set by reverse proxies)
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        # Take the first IP (original client)
+        return forwarded.split(",")[0].strip()
+    # Fall back to direct client IP
+    return request.client.host if request.client else "unknown"
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_files(files: list[UploadFile] = File(...), request: Request = None):
     """Upload one or more files and return preview data."""
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
+
+    # Check rate limit
+    user = getattr(request.state, "user", None) if request else None
+    user_id = user["id"] if user else None
+    client_ip = _get_client_ip(request)
+
+    is_allowed, retry_after = check_upload_rate_limit(user_id, client_ip)
+    if not is_allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Please wait before uploading more files.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
     # Sanitize and validate all filenames
     valid_extensions = ('.json', '.csv', '.tsv', '.ltsv', '.log', '.txt', '.ndjson', '.jsonl')
@@ -148,6 +175,16 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
             records = parse_preview(fp, file_format, limit=preview_limit)
             preview_records.extend(records)
 
+        # Validate field count per document
+        if settings.max_fields_per_document > 0:
+            is_valid, max_found = validate_field_count(preview_records, settings.max_fields_per_document)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Document contains {max_found} fields, which exceeds the maximum of {settings.max_fields_per_document}. "
+                           f"Please reduce the number of fields or contact an administrator."
+                )
+
         fields = infer_fields(preview_records)
 
         # Create database record (use sanitized filenames)
@@ -221,6 +258,16 @@ async def get_preview(upload_id: str):
 
         if not file_paths:
             raise HTTPException(status_code=404, detail="Uploaded files no longer exist")
+
+        # Validate field count per document
+        if settings.max_fields_per_document > 0:
+            is_valid, max_found = validate_field_count(preview, settings.max_fields_per_document)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Document contains {max_found} fields, which exceeds the maximum of {settings.max_fields_per_document}. "
+                           f"Please reduce the number of fields or contact an administrator."
+                )
 
         fields = infer_fields(preview)
         _upload_cache[safe_id] = {
