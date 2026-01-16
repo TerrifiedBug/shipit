@@ -146,9 +146,9 @@ class TestDeleteIndexEndpoint:
 
         # Verify audit log was created
         from app.services.database import list_audit_logs
-        logs = list_audit_logs(action="delete_index")
-        assert len(logs) >= 1
-        assert any(log["target"] == "shipit-audit-test" for log in logs)
+        logs, total = list_audit_logs(event_type="index_deleted")
+        assert total >= 1
+        assert any(log["target_id"] == "shipit-audit-test" for log in logs)
 
     def test_delete_index_untracks_index(self, db):
         """Test that deleting an index removes it from tracking."""

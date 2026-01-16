@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
-from app.routers import admin, api_upload, auth, health, history, indexes, keys, upload
+from app.routers import admin, api_upload, audit, auth, health, history, indexes, keys, upload
 from app.routers.auth import get_current_user
 from app.services.database import init_db
 
@@ -72,6 +72,7 @@ app.add_middleware(
 
 app.include_router(admin.router, prefix="/api")
 app.include_router(api_upload.router)  # Has its own /api/v1 prefix
+app.include_router(audit.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(health.router, prefix="/api")
 app.include_router(indexes.router, prefix="/api")

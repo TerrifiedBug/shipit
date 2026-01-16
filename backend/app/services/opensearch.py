@@ -13,7 +13,7 @@ def get_client() -> OpenSearch:
         hosts=[settings.opensearch_host],
         http_auth=(settings.opensearch_user, settings.opensearch_password),
         use_ssl=settings.opensearch_host.startswith("https"),
-        verify_certs=False,  # For self-signed certs in dev
+        verify_certs=settings.opensearch_verify_certs,
         ssl_show_warn=False,
         timeout=30,
         max_retries=3,

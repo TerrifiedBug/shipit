@@ -28,9 +28,12 @@ ShipIt is designed for controlled self-service, with guardrails to prevent accid
 - **Strict Index Mode**: By default, ShipIt only writes to and deletes indices it created. This prevents accidental overwrites or deletion of production indices or data managed by other pipelines. Disable with `STRICT_INDEX_MODE=false` if you need more flexibility.
 - **Index Prefix Isolation**: All indices are prefixed (default: `shipit-`) to clearly separate ad-hoc data from production indices.
 - **Authentication Required**: No anonymous access. All users must authenticate via local credentials, OIDC SSO, or API keys.
-- **Audit Trail**: Every upload is logged with user attribution, timestamp, file details, and target index - visible in the History view.
+- **Comprehensive Audit Log**: All security-relevant events are logged including logins (success/failure), user management actions, API key operations, index operations, and ingestion activities. Admins can view and filter audit logs from the UI.
+- **Rate Limiting**: Per-user rate limiting (default: 10 uploads/minute) prevents abuse and accidental flooding.
+- **Field Count Limits**: Maximum fields per document (default: 1000) prevents OpenSearch mapping explosion from malformed data.
 - **API Key Scoping**: Programmatic access via API keys inherits the creating user's permissions, supports expiration dates, and is tracked in audit logs.
 - **File Size Limits**: Configurable maximum upload size (default: 500MB) to prevent resource exhaustion.
+- **SSL Verification**: SSL certificate verification is enabled by default for OpenSearch connections.
 - **Session Security**: HTTP-only cookies with configurable session duration.
 
 ## Features
@@ -129,7 +132,10 @@ docker run -p 80:80 --env-file .env shipit
 |----------|---------|-------------|
 | `INDEX_PREFIX` | `shipit-` | Prefix for all created indices |
 | `STRICT_INDEX_MODE` | `true` | Block writes to indices not created by ShipIt (prevents accidental overwrites) |
+| `OPENSEARCH_VERIFY_CERTS` | `true` | Verify SSL certificates when connecting to OpenSearch |
 | `MAX_FILE_SIZE_MB` | `500` | Maximum upload file size in MB |
+| `MAX_FIELDS_PER_DOCUMENT` | `1000` | Maximum fields per document to prevent mapping explosion (0 to disable) |
+| `UPLOAD_RATE_LIMIT_PER_MINUTE` | `10` | Maximum uploads per minute per user (0 to disable) |
 | `SESSION_DURATION_HOURS` | `8` | How long user sessions remain valid |
 | `APP_URL` | - | Public URL for CORS and OIDC callbacks (e.g., `https://shipit.example.com`) |
 | `FAILURE_FILE_RETENTION_HOURS` | `24` | How long to keep failed record files |

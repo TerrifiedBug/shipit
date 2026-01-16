@@ -359,3 +359,45 @@ def _infer_string_type(value: str) -> str:
 
     # Could add date detection here in the future
     return "string"
+
+
+def count_fields(record: dict, prefix: str = "") -> int:
+    """Count all fields in a record, including nested fields.
+
+    Nested objects are flattened with dot notation for counting.
+    For example: {"a": {"b": 1, "c": 2}} counts as 2 fields (a.b, a.c).
+
+    Arrays count as 1 field regardless of content.
+    """
+    count = 0
+    for key, value in record.items():
+        if isinstance(value, dict):
+            # Recursively count nested fields
+            count += count_fields(value, f"{prefix}{key}.")
+        else:
+            # Leaf field (including arrays)
+            count += 1
+    return count
+
+
+def validate_field_count(records: list[dict], max_fields: int) -> tuple[bool, int]:
+    """Validate that no record exceeds the maximum field count.
+
+    Args:
+        records: List of parsed records to validate
+        max_fields: Maximum allowed fields per document (0 = disabled)
+
+    Returns:
+        (is_valid, max_found) - True if all records are valid, plus the max field count found
+    """
+    if max_fields == 0:
+        return True, 0
+
+    max_found = 0
+    for record in records:
+        field_count = count_fields(record)
+        max_found = max(max_found, field_count)
+        if field_count > max_fields:
+            return False, field_count
+
+    return True, max_found

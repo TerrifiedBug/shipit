@@ -470,3 +470,62 @@ export async function activateUser(userId: string): Promise<AdminUser> {
   }
   return response.json();
 }
+
+// Audit log types and functions
+export interface AuditLogEntry {
+  id: string;
+  event_type: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  target_type: string | null;
+  target_id: string | null;
+  details: Record<string, unknown> | null;
+  ip_address: string | null;
+  created_at: string;
+}
+
+export interface AuditLogListResponse {
+  logs: AuditLogEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface AuditLogParams {
+  page?: number;
+  page_size?: number;
+  event_type?: string;
+  actor_id?: string;
+  target_type?: string;
+}
+
+export async function getAuditLogs(params: AuditLogParams = {}): Promise<AuditLogListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.append('page', params.page.toString());
+  if (params.page_size) searchParams.append('page_size', params.page_size.toString());
+  if (params.event_type) searchParams.append('event_type', params.event_type);
+  if (params.actor_id) searchParams.append('actor_id', params.actor_id);
+  if (params.target_type) searchParams.append('target_type', params.target_type);
+
+  const response = await fetch(`${API_BASE}/api/audit/logs?${searchParams}`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch audit logs');
+  }
+  return response.json();
+}
+
+export async function getAuditEventTypes(): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/api/audit/event-types`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch event types');
+  }
+  const data = await response.json();
+  return data.event_types;
+}

@@ -89,20 +89,26 @@ class TestApiKeys:
 class TestAuditLog:
     def test_create_audit_log(self, db):
         user = create_user(email="audit@example.com", name="Audit User", auth_type="local")
-        log = create_audit_log(
-            user_id=user["id"],
-            action="delete_index",
-            target="shipit-test",
+        create_audit_log(
+            event_type="index_deleted",
+            actor_id=user["id"],
+            actor_name=user["email"],
+            target_type="index",
+            target_id="shipit-test",
         )
-        assert log["id"] is not None
-        assert log["action"] == "delete_index"
+        logs, total = list_audit_logs()
+        assert total >= 1
+        # Find our log
+        matching = [log for log in logs if log.get("event_type") == "index_deleted"]
+        assert len(matching) >= 1
+        assert matching[0]["actor_id"] == user["id"]
 
     def test_list_audit_logs(self, db):
         user = create_user(email="audit2@example.com", name="Audit User", auth_type="local")
-        create_audit_log(user_id=user["id"], action="action1", target="target1")
-        create_audit_log(user_id=user["id"], action="action2", target="target2")
-        logs = list_audit_logs()
-        assert len(logs) >= 2
+        create_audit_log(event_type="test_event_1", actor_id=user["id"], actor_name=user["email"])
+        create_audit_log(event_type="test_event_2", actor_id=user["id"], actor_name=user["email"])
+        logs, total = list_audit_logs()
+        assert total >= 2
 
 
 class TestAuthService:

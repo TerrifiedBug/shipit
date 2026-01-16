@@ -8,10 +8,15 @@ class Settings(BaseSettings):
     opensearch_host: str = "https://localhost:9200"
     opensearch_user: str = "admin"
     opensearch_password: str = "admin"
+    opensearch_verify_certs: bool = True
     index_prefix: str = "shipit-"
     strict_index_mode: bool = True
     failure_file_retention_hours: int = 24
     max_file_size_mb: int = 500
+    max_fields_per_document: int = 1000  # 0 to disable
+
+    # Rate limiting
+    upload_rate_limit_per_minute: int = 10
 
     # Hardcoded data directory (Docker volume mount point)
     data_dir: str = "/data"
