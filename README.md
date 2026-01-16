@@ -21,6 +21,18 @@ ShipIt bridges this gap by providing a simple web interface for self-service dat
 - **Backend**: Python with FastAPI - chosen for its async performance, excellent OpenSearch client support, and readable codebase that's easy to extend
 - **Deployment**: Single Docker container with nginx reverse proxy, making it simple to deploy anywhere
 
+## Security & Guardrails
+
+ShipIt is designed for controlled self-service, with guardrails to prevent accidents and maintain accountability:
+
+- **Strict Index Mode**: By default, ShipIt only writes to and deletes indices it created. This prevents accidental overwrites or deletion of production indices or data managed by other pipelines. Disable with `STRICT_INDEX_MODE=false` if you need more flexibility.
+- **Index Prefix Isolation**: All indices are prefixed (default: `shipit-`) to clearly separate ad-hoc data from production indices.
+- **Authentication Required**: No anonymous access. All users must authenticate via local credentials, OIDC SSO, or API keys.
+- **Audit Trail**: Every upload is logged with user attribution, timestamp, file details, and target index - visible in the History view.
+- **API Key Scoping**: Programmatic access via API keys inherits the creating user's permissions, supports expiration dates, and is tracked in audit logs.
+- **File Size Limits**: Configurable maximum upload size (default: 500MB) to prevent resource exhaustion.
+- **Session Security**: HTTP-only cookies with configurable session duration.
+
 ## Features
 
 - **Authentication**: Local users, OIDC SSO, and API keys for automation
