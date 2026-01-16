@@ -99,7 +99,6 @@ docker run -p 80:80 --env-file .env shipit
 | `INDEX_PREFIX` | `shipit-` | Prefix for all created indices |
 | `STRICT_INDEX_MODE` | `true` | Block writes to indices not created by ShipIt (prevents accidental overwrites) |
 | `MAX_FILE_SIZE_MB` | `500` | Maximum upload file size in MB |
-| `DATA_DIR` | `/data` | Directory for uploads and database |
 | `SESSION_DURATION_HOURS` | `8` | How long user sessions remain valid |
 | `APP_URL` | - | Public URL for CORS and OIDC callbacks (e.g., `https://shipit.example.com`) |
 | `FAILURE_FILE_RETENTION_HOURS` | `24` | How long to keep failed record files |

@@ -11,8 +11,10 @@ class Settings(BaseSettings):
     index_prefix: str = "shipit-"
     strict_index_mode: bool = True
     failure_file_retention_hours: int = 24
-    data_dir: str = "/data"
     max_file_size_mb: int = 500
+
+    # Hardcoded data directory (Docker volume mount point)
+    data_dir: str = "/data"
 
     # Ingestion settings
     bulk_batch_size: int = 1000
