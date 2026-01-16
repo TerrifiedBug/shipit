@@ -76,7 +76,7 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
         raise HTTPException(status_code=400, detail="No files provided")
 
     # Sanitize and validate all filenames
-    valid_extensions = ('.json', '.csv', '.tsv', '.ltsv', '.log')
+    valid_extensions = ('.json', '.csv', '.tsv', '.ltsv', '.log', '.txt', '.ndjson', '.jsonl')
     sanitized_filenames: list[str] = []
 
     for file in files:
@@ -87,7 +87,7 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
         if not safe_name.lower().endswith(valid_extensions):
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported file type: {safe_name}. Supported: JSON, CSV, TSV, LTSV, LOG"
+                detail=f"Unsupported file type: {safe_name}. Supported: JSON, NDJSON, CSV, TSV, LTSV, TXT, LOG"
             )
         sanitized_filenames.append(safe_name)
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ApiKey, CreateKeyResponse, listApiKeys, createApiKey, deleteApiKey } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 
@@ -17,16 +17,30 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
   const { addToast } = useToast();
 
+  // Check if form has unsaved changes
+  const isDirty = showCreateForm && newKeyName.trim().length > 0;
+
+  // Wrap onClose with dirty state confirmation
+  const handleClose = useCallback(() => {
+    if (isDirty) {
+      if (window.confirm('You have unsaved changes. Discard them?')) {
+        onClose();
+      }
+    } else {
+      onClose();
+    }
+  }, [isDirty, onClose]);
+
   // Handle ESC key to close modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !keyToDelete && !newlyCreatedKey) {
-        onClose();
+        handleClose();
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, keyToDelete, newlyCreatedKey]);
+  }, [handleClose, keyToDelete, newlyCreatedKey]);
 
   useEffect(() => {
     loadKeys();
@@ -89,7 +103,7 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
   // Handle backdrop click
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget && !keyToDelete && !newlyCreatedKey) {
-      onClose();
+      handleClose();
     }
   };
 
@@ -102,7 +116,7 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">API Keys</h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

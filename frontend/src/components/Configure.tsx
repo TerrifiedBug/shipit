@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   cancelIngest,
   FieldInfo,
@@ -85,6 +85,28 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [includeFilename, setIncludeFilename] = useState(false);
   const [filenameField, setFilenameField] = useState('source_file');
+
+  // Track if form has been modified
+  const isDirty = useMemo(() => {
+    if (indexName.trim()) return true;
+    if (timestampField !== null) return true;
+    if (includeFilename) return true;
+    if (filenameField !== 'source_file') return true;
+    // Check if any field mappings have changed
+    return fieldMappings.some(
+      (f, i) => f.excluded || f.mappedName !== data.fields[i].name
+    );
+  }, [indexName, timestampField, includeFilename, filenameField, fieldMappings, data.fields]);
+
+  const handleBack = () => {
+    if (isDirty && !isIngesting) {
+      if (window.confirm('You have unsaved configuration changes. Discard them?')) {
+        onBack();
+      }
+    } else {
+      onBack();
+    }
+  };
 
   const handleFieldNameChange = (index: number, newName: string) => {
     setFieldMappings((prev) =>
@@ -448,7 +470,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
       {/* Actions */}
       <div className="flex justify-between">
         <button
-          onClick={onBack}
+          onClick={handleBack}
           disabled={isIngesting}
           className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
         >
