@@ -169,7 +169,11 @@ def validate_index_for_ingestion(index_name: str) -> dict[str, Any]:
         # Tracked index - safe to write, no additional tracking needed
         return {"exists": True, "tracked": True, "requires_tracking": False}
 
-    # Try to check if index exists in OpenSearch
+    # If strict mode is off, skip the existence check entirely - allow all writes
+    if not settings.strict_index_mode:
+        return {"exists": False, "tracked": False, "requires_tracking": True}
+
+    # Strict mode is on - need to check if index exists in OpenSearch
     try:
         client = get_client()
         exists = client.indices.exists(index=index_name)
@@ -178,8 +182,8 @@ def validate_index_for_ingestion(index_name: str) -> dict[str, Any]:
         logging.error(f"Permission denied checking if index '{index_name}' exists: {e}")
         raise ValueError(
             f"Cannot verify if index '{index_name}' exists - permission denied. "
-            f"The OpenSearch user needs 'indices:admin/exists' permission, or the index "
-            f"must be pre-created and tracked by ShipIt."
+            f"The OpenSearch user needs 'indices:admin/exists' permission on '{index_name}', "
+            f"or set STRICT_INDEX_MODE=false to skip this check."
         )
     except (ConnectionError, TransportError) as e:
         # Can't connect - fail with clear error
@@ -193,16 +197,12 @@ def validate_index_for_ingestion(index_name: str) -> dict[str, Any]:
         # New index - will need to be tracked after creation
         return {"exists": False, "tracked": False, "requires_tracking": True}
 
-    # External index (exists but not tracked)
-    if settings.strict_index_mode:
-        raise ValueError(
-            f"Index '{index_name}' exists but was not created by ShipIt. "
-            f"Writing to external indices is blocked in strict mode. "
-            f"Set STRICT_INDEX_MODE=false to allow writes to external indices."
-        )
-
-    # Strict mode off - allow but flag for tracking
-    return {"exists": True, "tracked": False, "requires_tracking": True}
+    # External index (exists but not tracked) - strict mode blocks this
+    raise ValueError(
+        f"Index '{index_name}' exists but was not created by ShipIt. "
+        f"Writing to external indices is blocked in strict mode. "
+        f"Set STRICT_INDEX_MODE=false to allow writes to external indices."
+    )
 
 
 def validate_index_name(index_name: str) -> tuple[bool, str]:

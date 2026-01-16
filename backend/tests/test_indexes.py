@@ -61,22 +61,21 @@ class TestIndexProtection:
                 validate_index_for_ingestion("shipit-external")
 
     def test_external_index_allowed_when_not_strict(self, db):
-        """Test that external indices are allowed when strict mode is off."""
+        """Test that external indices are allowed when strict mode is off (skips exists check)."""
         from app.services.opensearch import validate_index_for_ingestion
 
-        with patch("app.services.opensearch.get_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.indices.exists.return_value = True
-            mock_get_client.return_value = mock_client
+        with patch("app.services.opensearch.settings") as mock_settings:
+            mock_settings.strict_index_mode = False
 
-            with patch("app.services.opensearch.settings") as mock_settings:
-                mock_settings.strict_index_mode = False
-
+            with patch("app.services.opensearch.get_client") as mock_get_client:
                 result = validate_index_for_ingestion("shipit-external")
 
-                assert result["exists"] is True
+                # When strict mode is off, we skip the exists check entirely
+                assert result["exists"] is False  # We didn't check, assume new
                 assert result["tracked"] is False
                 assert result["requires_tracking"] is True
+                # Verify we didn't call OpenSearch
+                mock_get_client.assert_not_called()
 
 
 class TestDeleteIndexEndpoint:
