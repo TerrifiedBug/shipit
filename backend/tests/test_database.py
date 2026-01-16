@@ -279,6 +279,54 @@ class TestDatabase:
         user = get_user_by_email("test@example.com")
         assert user["is_active"] == 1
 
+    def test_soft_delete_user(self, temp_db):
+        """Test soft deleting a user."""
+        from app.services.database import create_user, delete_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("delete@example.com", "Delete User", "local", hash_password("password123"), is_admin=False)
+        user_id = user["id"]
+
+        delete_user(user_id)
+
+        # User should still exist but be marked as deleted
+        user = get_user_by_email("delete@example.com", include_deleted=True)
+        assert user is not None
+        assert user["deleted_at"] is not None
+
+    def test_deleted_user_not_returned_by_default(self, temp_db):
+        """Test that deleted users are not returned by default."""
+        from app.services.database import create_user, delete_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("delete@example.com", "Delete User", "local", hash_password("password123"), is_admin=False)
+        delete_user(user["id"])
+
+        # Default should not return deleted user
+        user = get_user_by_email("delete@example.com")
+        assert user is None
+
+    def test_reregister_deleted_user(self, temp_db):
+        """Test that deleted user can re-register with same email."""
+        from app.services.database import create_user, delete_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("rereg@example.com", "First", "local", hash_password("password123"), is_admin=False)
+        original_id = user["id"]
+        delete_user(original_id)
+
+        # Re-register with same email - should reactivate
+        new_user = create_user("rereg@example.com", "Second", "local", hash_password("newpass456"), is_admin=False)
+
+        # Should be the same user ID (reactivated)
+        assert new_user["id"] == original_id
+        # Updated name
+        assert new_user["name"] == "Second"
+        # No longer deleted
+        assert new_user["deleted_at"] is None
+        # Should be active
+        assert new_user["is_active"] == 1
+
 
 class TestIndexTracking:
     def test_track_index(self, temp_db):

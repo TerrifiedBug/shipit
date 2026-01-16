@@ -361,16 +361,40 @@ def create_user(
     is_admin: bool = False,
     password_change_required: bool = False,
 ) -> dict:
-    """Create a new user."""
-    user_id = str(uuid.uuid4())
+    """Create a new user or reactivate a deleted user.
+
+    If a user with the same email was previously deleted, reactivate them
+    with the new information instead of creating a duplicate.
+    """
     with get_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO users (id, email, name, auth_type, password_hash, is_admin, password_change_required)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (user_id, email, name, auth_type, password_hash, 1 if is_admin else 0, 1 if password_change_required else 0),
-        )
+        # Check if a deleted user exists with this email
+        existing = conn.execute(
+            "SELECT id FROM users WHERE email = ? AND deleted_at IS NOT NULL",
+            (email,),
+        ).fetchone()
+
+        if existing:
+            # Reactivate deleted user with new information
+            user_id = existing[0]
+            conn.execute(
+                """UPDATE users
+                   SET name = ?, auth_type = ?, password_hash = ?, is_admin = ?,
+                       password_change_required = ?, deleted_at = NULL, is_active = 1
+                   WHERE id = ?""",
+                (name, auth_type, password_hash, 1 if is_admin else 0,
+                 1 if password_change_required else 0, user_id),
+            )
+        else:
+            # Create new user
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                """
+                INSERT INTO users (id, email, name, auth_type, password_hash, is_admin, password_change_required)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, email, name, auth_type, password_hash, 1 if is_admin else 0, 1 if password_change_required else 0),
+            )
+
     return get_user_by_id(user_id)
 
 
@@ -385,12 +409,22 @@ def get_user_by_id(user_id: str) -> dict | None:
     return None
 
 
-def get_user_by_email(email: str) -> dict | None:
-    """Get user by email."""
+def get_user_by_email(email: str, include_deleted: bool = False) -> dict | None:
+    """Get user by email.
+
+    Args:
+        email: The email address to look up.
+        include_deleted: If True, include soft-deleted users. Defaults to False.
+    """
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM users WHERE email = ?", (email,)
-        ).fetchone()
+        if include_deleted:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email = ? AND deleted_at IS NULL", (email,)
+            ).fetchone()
     if row:
         return dict(row)
     return None
@@ -478,6 +512,24 @@ def reactivate_user(user_id: str) -> None:
         conn.execute(
             "UPDATE users SET is_active = 1 WHERE id = ?",
             (user_id,)
+        )
+
+
+def delete_user(user_id: str) -> None:
+    """
+    Soft delete a user account.
+
+    Sets the deleted_at timestamp, which prevents login and hides the user
+    from default queries. The email remains tied to the account but can be
+    reclaimed if the user re-registers.
+
+    Args:
+        user_id: The unique identifier of the user to delete.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET deleted_at = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), user_id),
         )
 
 
