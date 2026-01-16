@@ -1,3 +1,4 @@
+
 import json
 import sqlite3
 import uuid
@@ -143,6 +144,20 @@ def _init_shipit_indices_table(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _init_failed_logins_table(conn: sqlite3.Connection) -> None:
+    """Create failed_logins table for tracking failed login attempts."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS failed_logins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            ip_address TEXT,
+            attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_failed_logins_user_id ON failed_logins(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_failed_logins_attempted_at ON failed_logins(attempted_at)")
+
+
 def init_db() -> None:
     """Initialize the database schema."""
     with get_connection() as conn:
@@ -151,6 +166,7 @@ def init_db() -> None:
         _init_api_keys_table(conn)
         _init_audit_log_table(conn)
         _init_shipit_indices_table(conn)
+        _init_failed_logins_table(conn)
 
 
 @contextmanager
@@ -812,3 +828,70 @@ def is_index_tracked(index_name: str) -> bool:
             (index_name,),
         ).fetchone()
     return row is not None
+
+
+# Failed login tracking functions (for account lockout)
+
+
+def record_failed_login(user_id: str, ip_address: str | None = None) -> None:
+    """
+    Record a failed login attempt for a user.
+
+    Args:
+        user_id: The ID of the user who failed to log in.
+        ip_address: The IP address of the client.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO failed_logins (user_id, ip_address) VALUES (?, ?)",
+            (user_id, ip_address),
+        )
+
+
+def get_failed_login_count(user_id: str, minutes: int) -> int:
+    """
+    Get the number of failed login attempts for a user within the given time window.
+
+    Args:
+        user_id: The ID of the user to check.
+        minutes: The time window in minutes to check for failed attempts.
+
+    Returns:
+        The number of failed login attempts within the time window.
+    """
+    cutoff = (datetime.utcnow() - timedelta(minutes=minutes)).isoformat()
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM failed_logins WHERE user_id = ? AND attempted_at > ?",
+            (user_id, cutoff),
+        ).fetchone()
+    return row[0] if row else 0
+
+
+def clear_failed_logins(user_id: str) -> None:
+    """
+    Clear all failed login attempts for a user.
+
+    Called after a successful login to reset the lockout counter.
+
+    Args:
+        user_id: The ID of the user to clear failed logins for.
+    """
+    with get_connection() as conn:
+        conn.execute("DELETE FROM failed_logins WHERE user_id = ?", (user_id,))
+
+
+def is_account_locked(user_id: str, lockout_minutes: int) -> bool:
+    """
+    Check if an account is locked due to too many failed login attempts.
+
+    Args:
+        user_id: The ID of the user to check.
+        lockout_minutes: The time window in minutes for the lockout period.
+
+    Returns:
+        True if the account is locked, False otherwise.
+    """
+    from app.config import settings
+    failed_count = get_failed_login_count(user_id, lockout_minutes)
+    return failed_count >= settings.account_lockout_attempts

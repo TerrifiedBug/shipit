@@ -1,4 +1,5 @@
 """OIDC authentication service."""
+
 import secrets
 from dataclasses import dataclass
 from urllib.parse import urlencode

@@ -1,4 +1,5 @@
 """Rate limiting service using sliding window counters."""
+
 import time
 from collections import defaultdict
 from threading import Lock

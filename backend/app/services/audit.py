@@ -1,4 +1,5 @@
 """Audit logging service for tracking security-relevant events."""
+
 from app.services import database as db
 
 

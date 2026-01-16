@@ -1,3 +1,5 @@
+
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Response, Request, Depends
@@ -16,9 +18,52 @@ from app.services.database import (
     update_user,
     get_api_key_by_hash,
     update_api_key_last_used,
+    record_failed_login,
+    get_failed_login_count,
+    clear_failed_logins,
+    is_account_locked,
 )
+from app.services.rate_limit import RateLimiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Rate limiter for login attempts (by IP)
+login_rate_limiter = RateLimiter(window_seconds=60)
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    """Set session cookie with appropriate security settings."""
+    response.set_cookie(
+        key="session",
+        value=token,
+        httponly=True,
+        secure=settings.is_secure_cookies(),
+        samesite="lax",
+        max_age=settings.session_duration_hours * 60 * 60,
+    )
+
+
+def validate_password(password: str) -> tuple[bool, str]:
+    """Validate password against configured requirements.
+
+    Returns (is_valid, error_message).
+    """
+    if len(password) < settings.password_min_length:
+        return False, f"Password must be at least {settings.password_min_length} characters"
+
+    if settings.password_require_uppercase and not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter"
+
+    if settings.password_require_lowercase and not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter"
+
+    if settings.password_require_digit and not re.search(r'\d', password):
+        return False, "Password must contain at least one digit"
+
+    if settings.password_require_special and not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False, "Password must contain at least one special character"
+
+    return True, ""
 
 
 def _get_client_ip(request: Request | None) -> str:
@@ -97,6 +142,11 @@ def setup_first_user(request: SetupRequest, response: Response):
     if count_users() > 0:
         raise HTTPException(status_code=400, detail="Setup already completed")
 
+    # Validate password
+    is_valid, error_msg = validate_password(request.password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+
     password_hash = hash_password(request.password)
     user = create_user(
         email=request.email,
@@ -108,13 +158,7 @@ def setup_first_user(request: SetupRequest, response: Response):
 
     # Auto-login after setup
     token = create_session_token(user["id"])
-    response.set_cookie(
-        key="session",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        max_age=8 * 60 * 60,  # 8 hours
-    )
+    _set_session_cookie(response, token)
 
     return user
 
@@ -123,6 +167,19 @@ def setup_first_user(request: SetupRequest, response: Response):
 def login(request: LoginRequest, response: Response, http_request: Request = None):
     """Login with email and password."""
     client_ip = _get_client_ip(http_request)
+
+    # Check login rate limit by IP
+    is_allowed, retry_after = login_rate_limiter.is_allowed(
+        f"login:{client_ip}",
+        settings.login_rate_limit_per_minute
+    )
+    if not is_allowed:
+        audit.log_login_failed(request.email, "rate_limited", client_ip)
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Please try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
     user = get_user_by_email(request.email)
     if not user or user["auth_type"] != "local":
@@ -134,6 +191,14 @@ def login(request: LoginRequest, response: Response, http_request: Request = Non
         audit.log_login_failed(request.email, "user_deleted", client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # Check if account is locked due to failed attempts
+    if is_account_locked(user["id"], settings.account_lockout_minutes):
+        audit.log_login_failed(request.email, "account_locked", client_ip)
+        raise HTTPException(
+            status_code=403,
+            detail=f"Account temporarily locked due to too many failed login attempts. Try again in {settings.account_lockout_minutes} minutes."
+        )
+
     # Check if user is deactivated
     if not user.get("is_active", True):
         audit.log_login_failed(request.email, "account_deactivated", client_ip)
@@ -144,22 +209,34 @@ def login(request: LoginRequest, response: Response, http_request: Request = Non
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not verify_password(request.password, user["password_hash"]):
-        audit.log_login_failed(request.email, "invalid_password", client_ip)
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        # Record failed attempt for account lockout
+        record_failed_login(user["id"], client_ip)
+        failed_count = get_failed_login_count(user["id"], settings.account_lockout_minutes)
 
+        audit.log_login_failed(request.email, "invalid_password", client_ip)
+
+        # Check if this attempt triggers lockout
+        if failed_count >= settings.account_lockout_attempts:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Account temporarily locked due to too many failed login attempts. Try again in {settings.account_lockout_minutes} minutes."
+            )
+
+        remaining = settings.account_lockout_attempts - failed_count
+        raise HTTPException(
+            status_code=401,
+            detail=f"Invalid credentials. {remaining} attempt(s) remaining before account lockout."
+        )
+
+    # Successful login - clear failed attempts
+    clear_failed_logins(user["id"])
     update_user_last_login(user["id"])
 
     # Log successful login
     audit.log_login_success(user["id"], user["email"], client_ip)
 
     token = create_session_token(user["id"])
-    response.set_cookie(
-        key="session",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        max_age=8 * 60 * 60,
-    )
+    _set_session_cookie(response, token)
 
     return {
         "message": "Login successful",
@@ -197,8 +274,6 @@ class ChangePasswordRequest(BaseModel):
 @router.post("/change-password")
 def change_password(request: ChangePasswordRequest, user: dict = Depends(require_auth)):
     """Change the current user's password."""
-    from app.services.database import get_user_by_id, update_user
-
     # Get fresh user data
     current_user = get_user_by_id(user["id"])
     if not current_user or current_user["auth_type"] != "local":
@@ -208,9 +283,10 @@ def change_password(request: ChangePasswordRequest, user: dict = Depends(require
     if not verify_password(request.current_password, current_user["password_hash"]):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
 
-    # Validate new password
-    if len(request.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    # Validate new password against complexity requirements
+    is_valid, error_msg = validate_password(request.new_password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
 
     # Update password and clear change required flag
     update_user(
@@ -349,13 +425,7 @@ async def oidc_callback(
         # Redirect to frontend with session cookie
         frontend_url = settings.app_url or "http://localhost:5173"
         redirect = RedirectResponse(url=frontend_url, status_code=302)
-        redirect.set_cookie(
-            key="session",
-            value=token,
-            httponly=True,
-            samesite="lax",
-            max_age=settings.session_duration_hours * 60 * 60,
-        )
+        _set_session_cookie(redirect, token)
         # Clear the state cookie
         redirect.delete_cookie(key="oidc_state")
         return redirect
