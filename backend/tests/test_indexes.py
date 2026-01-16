@@ -149,3 +149,23 @@ class TestDeleteIndexEndpoint:
         logs = list_audit_logs(action="delete_index")
         assert len(logs) >= 1
         assert any(log["target"] == "shipit-audit-test" for log in logs)
+
+    def test_delete_index_untracks_index(self, db):
+        """Test that deleting an index removes it from tracking."""
+        from app.services.database import track_index, is_index_tracked
+
+        cookies = self._login(db)
+
+        # Track the index first
+        track_index("shipit-tracked-delete", user_id="user123")
+        assert is_index_tracked("shipit-tracked-delete") is True
+
+        with patch("app.routers.indexes.delete_index") as mock_delete:
+            mock_delete.return_value = True
+
+            response = client.delete("/api/indexes/shipit-tracked-delete", cookies=cookies)
+
+            assert response.status_code == 200
+
+        # Verify index is no longer tracked
+        assert is_index_tracked("shipit-tracked-delete") is False
