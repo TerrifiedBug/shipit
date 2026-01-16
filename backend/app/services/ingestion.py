@@ -340,6 +340,8 @@ def ingest_file(
     excluded_fields: list[str] | None = None,
     timestamp_field: str | None = None,
     progress_callback: Callable[[int, int, int], None] | None = None,
+    include_filename: bool = False,
+    filename_field: str = "_source_file",
 ) -> IngestionResult:
     """
     Ingest a file into OpenSearch.
@@ -352,6 +354,8 @@ def ingest_file(
         excluded_fields: Optional list of fields to exclude
         timestamp_field: Optional field to parse as timestamp and map to @timestamp
         progress_callback: Optional callback(processed, success, failed) for progress updates
+        include_filename: Whether to add source filename to each record
+        filename_field: Name of the field to use for filename (default: _source_file)
 
     Returns:
         IngestionResult with counts and any failed records
@@ -367,6 +371,10 @@ def ingest_file(
     failures_dir.mkdir(parents=True, exist_ok=True)
 
     for record in stream_records(file_path, file_format):
+        # Add source filename if requested
+        if include_filename:
+            record[filename_field] = file_path.name
+
         # Apply field mappings and timestamp processing
         mapped_record = apply_field_mappings(
             record, field_mappings, excluded_fields, timestamp_field

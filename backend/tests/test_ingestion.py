@@ -198,3 +198,57 @@ class TestIngestFile:
         assert result.success == 2
         assert result.failed == 1
         assert len(result.failed_records) == 1
+
+    @patch("app.services.ingestion.bulk_index")
+    def test_include_filename(self, mock_bulk_index, json_array_file):
+        """Test that source filename is added to records when requested."""
+        mock_bulk_index.return_value = {"success": 3, "failed": []}
+
+        result = ingest_file(
+            file_path=json_array_file,
+            file_format="json_array",
+            index_name="shipit-test",
+            include_filename=True,
+        )
+
+        # Check that filename field was added
+        call_args = mock_bulk_index.call_args
+        records = call_args[0][1]
+        assert all("_source_file" in r for r in records)
+        # The fixture file is named test_data.json
+        assert all(r["_source_file"] == json_array_file.name for r in records)
+
+    @patch("app.services.ingestion.bulk_index")
+    def test_custom_filename_field(self, mock_bulk_index, json_array_file):
+        """Test that custom filename field name works."""
+        mock_bulk_index.return_value = {"success": 3, "failed": []}
+
+        result = ingest_file(
+            file_path=json_array_file,
+            file_format="json_array",
+            index_name="shipit-test",
+            include_filename=True,
+            filename_field="origin_file",
+        )
+
+        # Check that custom field name was used
+        call_args = mock_bulk_index.call_args
+        records = call_args[0][1]
+        assert all("origin_file" in r for r in records)
+        assert all("_source_file" not in r for r in records)
+
+    @patch("app.services.ingestion.bulk_index")
+    def test_filename_not_included_by_default(self, mock_bulk_index, json_array_file):
+        """Test that filename is not added when not requested."""
+        mock_bulk_index.return_value = {"success": 3, "failed": []}
+
+        result = ingest_file(
+            file_path=json_array_file,
+            file_format="json_array",
+            index_name="shipit-test",
+        )
+
+        # Check that filename field was NOT added
+        call_args = mock_bulk_index.call_args
+        records = call_args[0][1]
+        assert all("_source_file" not in r for r in records)

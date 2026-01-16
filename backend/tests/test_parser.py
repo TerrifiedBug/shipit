@@ -32,6 +32,30 @@ class TestDetectFormat:
         file_path.write_text('  \n  {"a": 1}\n{"b": 2}')
         assert detect_format(file_path) == "ndjson"
 
+    def test_misnamed_json_as_csv(self, temp_dir):
+        """Test that .csv file with JSON content is detected as JSON."""
+        file_path = temp_dir / "data.csv"
+        file_path.write_text('[{"name": "Alice", "age": 30}]')
+        assert detect_format(file_path) == "json_array"
+
+    def test_misnamed_ndjson_as_txt(self, temp_dir):
+        """Test that .txt file with NDJSON content is detected as NDJSON."""
+        file_path = temp_dir / "data.txt"
+        file_path.write_text('{"name": "Alice"}\n{"name": "Bob"}')
+        assert detect_format(file_path) == "ndjson"
+
+    def test_correct_csv_extension(self, temp_dir):
+        """Test that .csv file with valid CSV content is detected as CSV."""
+        file_path = temp_dir / "data.csv"
+        file_path.write_text('name,age\nAlice,30\nBob,25')
+        assert detect_format(file_path) == "csv"
+
+    def test_correct_json_extension(self, temp_dir):
+        """Test that .json file with valid JSON content is detected as JSON."""
+        file_path = temp_dir / "data.json"
+        file_path.write_text('[{"name": "Alice"}]')
+        assert detect_format(file_path) == "json_array"
+
 
 class TestParsePreview:
     def test_json_array(self, json_array_file):
