@@ -108,6 +108,18 @@ def _init_audit_log_table(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _init_shipit_indices_table(conn: sqlite3.Connection) -> None:
+    """Create shipit_indices table for tracking ShipIt-created indices."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS shipit_indices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            index_name TEXT UNIQUE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by_user_id TEXT
+        )
+    """)
+
+
 def init_db() -> None:
     """Initialize the database schema."""
     with get_connection() as conn:
@@ -115,6 +127,7 @@ def init_db() -> None:
         _init_users_table(conn)
         _init_api_keys_table(conn)
         _init_audit_log_table(conn)
+        _init_shipit_indices_table(conn)
 
 
 @contextmanager
@@ -581,3 +594,61 @@ def list_audit_logs(
     with get_connection() as conn:
         rows = conn.execute(query, params).fetchall()
     return [dict(row) for row in rows]
+
+
+# Index tracking functions
+
+
+def track_index(index_name: str, user_id: str | None = None) -> None:
+    """
+    Track a ShipIt-created index.
+
+    Records that an index was created by ShipIt, allowing us to distinguish
+    between ShipIt-managed indices and external indices.
+
+    Args:
+        index_name: The name of the Elasticsearch index.
+        user_id: The ID of the user who created the index.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO shipit_indices (index_name, created_by_user_id)
+            VALUES (?, ?)
+            """,
+            (index_name, user_id),
+        )
+
+
+def untrack_index(index_name: str) -> None:
+    """
+    Remove tracking for an index.
+
+    Called when a ShipIt-managed index is deleted.
+
+    Args:
+        index_name: The name of the Elasticsearch index to untrack.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM shipit_indices WHERE index_name = ?",
+            (index_name,),
+        )
+
+
+def is_index_tracked(index_name: str) -> bool:
+    """
+    Check if an index is tracked by ShipIt.
+
+    Args:
+        index_name: The name of the Elasticsearch index to check.
+
+    Returns:
+        True if the index was created by ShipIt, False otherwise.
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM shipit_indices WHERE index_name = ?",
+            (index_name,),
+        ).fetchone()
+    return row is not None

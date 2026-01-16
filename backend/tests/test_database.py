@@ -278,3 +278,48 @@ class TestDatabase:
 
         user = get_user_by_email("test@example.com")
         assert user["is_active"] == 1
+
+
+class TestIndexTracking:
+    def test_track_index(self, temp_db):
+        """Test tracking a ShipIt-created index."""
+        from app.services.database import track_index, is_index_tracked
+
+        track_index("shipit-test", user_id="user123")
+
+        is_tracked = is_index_tracked("shipit-test")
+        assert is_tracked == True
+
+    def test_untrack_index(self, temp_db):
+        """Test untracking an index after deletion."""
+        from app.services.database import track_index, untrack_index, is_index_tracked
+
+        track_index("shipit-test", user_id="user123")
+        untrack_index("shipit-test")
+
+        is_tracked = is_index_tracked("shipit-test")
+        assert is_tracked == False
+
+    def test_index_not_tracked(self, temp_db):
+        """Test checking if an index is not tracked."""
+        from app.services.database import is_index_tracked
+
+        is_tracked = is_index_tracked("external-index")
+        assert is_tracked == False
+
+    def test_track_index_idempotent(self, temp_db):
+        """Tracking the same index twice should be idempotent."""
+        from app.services.database import track_index, is_index_tracked
+
+        track_index("shipit-test", user_id="user123")
+        track_index("shipit-test", user_id="user456")  # Second track with different user
+
+        is_tracked = is_index_tracked("shipit-test")
+        assert is_tracked == True
+
+    def test_untrack_nonexistent_index(self, temp_db):
+        """Untracking a non-existent index should not raise error."""
+        from app.services.database import untrack_index
+
+        # Should not raise exception
+        untrack_index("nonexistent-index")
