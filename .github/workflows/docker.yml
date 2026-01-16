@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'Dockerfile'
+      - 'deploy/**'
+      - 'nginx/**'
+      - '.github/workflows/docker.yml'
     tags:
       - 'v*'
   workflow_dispatch:  # Manual trigger from Actions tab
