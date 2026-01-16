@@ -195,6 +195,8 @@ export interface IngestRequest {
   timestamp_field?: string | null;
   field_mappings: Record<string, string>;
   excluded_fields: string[];
+  include_filename?: boolean;
+  filename_field?: string;
 }
 
 export interface IngestResponse {
@@ -375,6 +377,7 @@ export interface AdminUser {
   email: string;
   name: string | null;
   is_admin: boolean;
+  is_active: boolean;
   auth_type: string;
   created_at: string;
   last_login: string | null;
@@ -442,4 +445,28 @@ export async function deleteUser(userId: string): Promise<void> {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to delete user');
   }
+}
+
+export async function deactivateUser(userId: string): Promise<AdminUser> {
+  const response = await fetch(`${API_BASE}/api/admin/users/${userId}/deactivate`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to deactivate user');
+  }
+  return response.json();
+}
+
+export async function activateUser(userId: string): Promise<AdminUser> {
+  const response = await fetch(`${API_BASE}/api/admin/users/${userId}/activate`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to activate user');
+  }
+  return response.json();
 }

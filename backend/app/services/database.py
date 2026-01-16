@@ -60,6 +60,7 @@ def _init_users_table(conn: sqlite3.Connection) -> None:
             auth_type TEXT NOT NULL,
             password_hash TEXT,
             is_admin INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
             password_change_required INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_login TIMESTAMP,
@@ -70,6 +71,7 @@ def _init_users_table(conn: sqlite3.Connection) -> None:
     for column, definition in [
         ("password_change_required", "INTEGER DEFAULT 0"),
         ("deleted_at", "TIMESTAMP"),
+        ("is_active", "INTEGER DEFAULT 1"),
     ]:
         try:
             conn.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
@@ -106,6 +108,18 @@ def _init_audit_log_table(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _init_shipit_indices_table(conn: sqlite3.Connection) -> None:
+    """Create shipit_indices table for tracking ShipIt-created indices."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS shipit_indices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            index_name TEXT UNIQUE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by_user_id TEXT
+        )
+    """)
+
+
 def init_db() -> None:
     """Initialize the database schema."""
     with get_connection() as conn:
@@ -113,6 +127,7 @@ def init_db() -> None:
         _init_users_table(conn)
         _init_api_keys_table(conn)
         _init_audit_log_table(conn)
+        _init_shipit_indices_table(conn)
 
 
 @contextmanager
@@ -346,16 +361,40 @@ def create_user(
     is_admin: bool = False,
     password_change_required: bool = False,
 ) -> dict:
-    """Create a new user."""
-    user_id = str(uuid.uuid4())
+    """Create a new user or reactivate a deleted user.
+
+    If a user with the same email was previously deleted, reactivate them
+    with the new information instead of creating a duplicate.
+    """
     with get_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO users (id, email, name, auth_type, password_hash, is_admin, password_change_required)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (user_id, email, name, auth_type, password_hash, 1 if is_admin else 0, 1 if password_change_required else 0),
-        )
+        # Check if a deleted user exists with this email
+        existing = conn.execute(
+            "SELECT id FROM users WHERE email = ? AND deleted_at IS NOT NULL",
+            (email,),
+        ).fetchone()
+
+        if existing:
+            # Reactivate deleted user with new information
+            user_id = existing[0]
+            conn.execute(
+                """UPDATE users
+                   SET name = ?, auth_type = ?, password_hash = ?, is_admin = ?,
+                       password_change_required = ?, deleted_at = NULL, is_active = 1
+                   WHERE id = ?""",
+                (name, auth_type, password_hash, 1 if is_admin else 0,
+                 1 if password_change_required else 0, user_id),
+            )
+        else:
+            # Create new user
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                """
+                INSERT INTO users (id, email, name, auth_type, password_hash, is_admin, password_change_required)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, email, name, auth_type, password_hash, 1 if is_admin else 0, 1 if password_change_required else 0),
+            )
+
     return get_user_by_id(user_id)
 
 
@@ -370,12 +409,22 @@ def get_user_by_id(user_id: str) -> dict | None:
     return None
 
 
-def get_user_by_email(email: str) -> dict | None:
-    """Get user by email."""
+def get_user_by_email(email: str, include_deleted: bool = False) -> dict | None:
+    """Get user by email.
+
+    Args:
+        email: The email address to look up.
+        include_deleted: If True, include soft-deleted users. Defaults to False.
+    """
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM users WHERE email = ?", (email,)
-        ).fetchone()
+        if include_deleted:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email = ? AND deleted_at IS NULL", (email,)
+            ).fetchone()
     if row:
         return dict(row)
     return None
@@ -431,6 +480,57 @@ def count_users() -> int:
     """Count total users."""
     with get_connection() as conn:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def deactivate_user(user_id: str) -> None:
+    """
+    Deactivate a user account.
+
+    Prevents the user from logging in while keeping their email address
+    associated with the account. The user can be reactivated later.
+
+    Args:
+        user_id: The unique identifier of the user to deactivate.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET is_active = 0 WHERE id = ?",
+            (user_id,)
+        )
+
+
+def reactivate_user(user_id: str) -> None:
+    """
+    Reactivate a deactivated user account.
+
+    Restores login access for a previously deactivated user.
+
+    Args:
+        user_id: The unique identifier of the user to reactivate.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET is_active = 1 WHERE id = ?",
+            (user_id,)
+        )
+
+
+def delete_user(user_id: str) -> None:
+    """
+    Soft delete a user account.
+
+    Sets the deleted_at timestamp, which prevents login and hides the user
+    from default queries. The email remains tied to the account but can be
+    reclaimed if the user re-registers.
+
+    Args:
+        user_id: The unique identifier of the user to delete.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET deleted_at = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), user_id),
+        )
 
 
 # API Key functions
@@ -546,3 +646,61 @@ def list_audit_logs(
     with get_connection() as conn:
         rows = conn.execute(query, params).fetchall()
     return [dict(row) for row in rows]
+
+
+# Index tracking functions
+
+
+def track_index(index_name: str, user_id: str | None = None) -> None:
+    """
+    Track a ShipIt-created index.
+
+    Records that an index was created by ShipIt, allowing us to distinguish
+    between ShipIt-managed indices and external indices.
+
+    Args:
+        index_name: The name of the Elasticsearch index.
+        user_id: The ID of the user who created the index.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO shipit_indices (index_name, created_by_user_id)
+            VALUES (?, ?)
+            """,
+            (index_name, user_id),
+        )
+
+
+def untrack_index(index_name: str) -> None:
+    """
+    Remove tracking for an index.
+
+    Called when a ShipIt-managed index is deleted.
+
+    Args:
+        index_name: The name of the Elasticsearch index to untrack.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM shipit_indices WHERE index_name = ?",
+            (index_name,),
+        )
+
+
+def is_index_tracked(index_name: str) -> bool:
+    """
+    Check if an index is tracked by ShipIt.
+
+    Args:
+        index_name: The name of the Elasticsearch index to check.
+
+    Returns:
+        True if the index was created by ShipIt, False otherwise.
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM shipit_indices WHERE index_name = ?",
+            (index_name,),
+        ).fetchone()
+    return row is not None

@@ -14,7 +14,7 @@ from app.config import settings
 from app.models import FieldInfo, IngestRequest, PreviewResponse, UploadResponse
 from app.services import database as db
 from app.services.ingestion import count_records, ingest_file
-from app.services.opensearch import validate_index_name
+from app.services.opensearch import validate_index_name, validate_index_for_ingestion
 from app.services.parser import detect_format, infer_fields, parse_preview
 
 router = APIRouter()
@@ -246,6 +246,10 @@ def _run_ingestion_task(
     field_mappings: dict,
     excluded_fields: list,
     timestamp_field: str | None,
+    track_index: bool = False,
+    user_id: str | None = None,
+    include_filename: bool = False,
+    filename_field: str = "source_file",
 ):
     """Run ingestion in a background thread."""
     start_time = time.time()
@@ -294,6 +298,8 @@ def _run_ingestion_task(
                 excluded_fields=excluded_fields,
                 timestamp_field=timestamp_field,
                 progress_callback=progress_callback,
+                include_filename=include_filename,
+                filename_field=filename_field,
             )
 
             # Accumulate totals after each file
@@ -316,6 +322,10 @@ def _run_ingestion_task(
             success_count=total_success,
             failure_count=total_failed,
         )
+
+        # Track index if needed (new index or external index in non-strict mode)
+        if track_index:
+            db.track_index(index_name, user_id=user_id)
 
         elapsed = time.time() - start_time
         _ingestion_progress[upload_id].update({
@@ -350,7 +360,7 @@ def _run_ingestion_task(
 
 
 @router.post("/upload/{upload_id}/ingest")
-async def start_ingest(upload_id: str, request: IngestRequest):
+async def start_ingest(upload_id: str, request: IngestRequest, http_request: Request = None):
     """Start ingestion of uploaded file(s) into OpenSearch (async)."""
     safe_id = _validate_upload_id(upload_id)
     upload = db.get_upload(safe_id)
@@ -383,6 +393,12 @@ async def start_ingest(upload_id: str, request: IngestRequest):
     # Build full index name with prefix
     full_index_name = f"{settings.index_prefix}{request.index_name}"
 
+    # Validate index can be written to (checks if external index in strict mode)
+    try:
+        index_meta = validate_index_for_ingestion(full_index_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     # Count total records across all files for progress tracking
     total_records = sum(count_records(fp, upload["file_format"]) for fp in existing_paths)
 
@@ -409,6 +425,10 @@ async def start_ingest(upload_id: str, request: IngestRequest):
         "estimated_remaining_seconds": 0,
     }
 
+    # Get user for index tracking
+    user = getattr(http_request.state, "user", None) if http_request else None
+    user_id = user["id"] if user else None
+
     # Start background thread for ingestion
     thread = threading.Thread(
         target=_run_ingestion_task,
@@ -420,6 +440,10 @@ async def start_ingest(upload_id: str, request: IngestRequest):
             request.field_mappings,
             request.excluded_fields,
             request.timestamp_field,
+            index_meta["requires_tracking"],
+            user_id,
+            request.include_filename,
+            request.filename_field,
         ),
         daemon=True,
     )

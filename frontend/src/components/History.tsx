@@ -55,6 +55,17 @@ export function History({ onClose }: HistoryProps) {
     setExpandedId(expandedId === id ? null : id);
   };
 
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !deleteTarget) {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, deleteTarget]);
+
   useEffect(() => {
     loadHistory();
   }, [statusFilter]);
@@ -95,8 +106,18 @@ export function History({ onClose }: HistoryProps) {
     }
   }
 
+  // Handle backdrop click
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && !deleteTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      onClick={handleBackdropClick}
+    >
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
@@ -169,6 +190,9 @@ export function History({ onClose }: HistoryProps) {
                     Date
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    Uploaded By
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                     Actions
                   </th>
                 </tr>
@@ -226,6 +250,9 @@ export function History({ onClose }: HistoryProps) {
                       <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                         {formatDate(upload.created_at)}
                       </td>
+                      <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                        {upload.user_name || '-'}
+                      </td>
                       <td className="px-4 py-3 text-sm">
                         <div className="flex items-center gap-2">
                           <button
@@ -270,7 +297,7 @@ export function History({ onClose }: HistoryProps) {
                     </tr>
                     {expandedId === upload.id && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-4 bg-gray-50 dark:bg-gray-700/50">
+                        <td colSpan={8} className="px-4 py-4 bg-gray-50 dark:bg-gray-700/50">
                           <div className="space-y-3">
                             {/* Basic info */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

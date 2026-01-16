@@ -222,3 +222,152 @@ class TestDatabase:
 
         assert upload["id"] == "no-user-upload"
         assert upload["user_id"] is None
+
+    def test_deactivate_user(self, temp_db):
+        """Test deactivating a user."""
+        from app.services.database import create_user, deactivate_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("test@example.com", "Test User", "local", hash_password("password123"), is_admin=False)
+        user_id = user["id"]
+
+        deactivate_user(user_id)
+
+        user = get_user_by_email("test@example.com")
+        assert user["is_active"] == 0  # SQLite returns 0/1 for boolean
+
+    def test_reactivate_user(self, temp_db):
+        """Test reactivating a deactivated user."""
+        from app.services.database import create_user, deactivate_user, reactivate_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("test@example.com", "Test User", "local", hash_password("password123"), is_admin=False)
+        user_id = user["id"]
+
+        deactivate_user(user_id)
+        reactivate_user(user_id)
+
+        user = get_user_by_email("test@example.com")
+        assert user["is_active"] == 1
+
+    def test_deactivate_nonexistent_user(self, temp_db):
+        """Deactivating non-existent user should not raise error."""
+        from app.services.database import deactivate_user
+        # Should not raise exception
+        deactivate_user("nonexistent-id")
+
+    def test_deactivate_already_deactivated(self, temp_db):
+        """Deactivating an already deactivated user should be idempotent."""
+        from app.services.database import create_user, deactivate_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("test@example.com", "Test", "local", hash_password("pass"), False)
+        deactivate_user(user["id"])
+        deactivate_user(user["id"])  # Second deactivation
+
+        user = get_user_by_email("test@example.com")
+        assert user["is_active"] == 0
+
+    def test_reactivate_already_active(self, temp_db):
+        """Reactivating an already active user should be idempotent."""
+        from app.services.database import create_user, reactivate_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("test@example.com", "Test", "local", hash_password("pass"), False)
+        reactivate_user(user["id"])  # Already active
+
+        user = get_user_by_email("test@example.com")
+        assert user["is_active"] == 1
+
+    def test_soft_delete_user(self, temp_db):
+        """Test soft deleting a user."""
+        from app.services.database import create_user, delete_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("delete@example.com", "Delete User", "local", hash_password("password123"), is_admin=False)
+        user_id = user["id"]
+
+        delete_user(user_id)
+
+        # User should still exist but be marked as deleted
+        user = get_user_by_email("delete@example.com", include_deleted=True)
+        assert user is not None
+        assert user["deleted_at"] is not None
+
+    def test_deleted_user_not_returned_by_default(self, temp_db):
+        """Test that deleted users are not returned by default."""
+        from app.services.database import create_user, delete_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("delete@example.com", "Delete User", "local", hash_password("password123"), is_admin=False)
+        delete_user(user["id"])
+
+        # Default should not return deleted user
+        user = get_user_by_email("delete@example.com")
+        assert user is None
+
+    def test_reregister_deleted_user(self, temp_db):
+        """Test that deleted user can re-register with same email."""
+        from app.services.database import create_user, delete_user, get_user_by_email
+        from app.services.auth import hash_password
+
+        user = create_user("rereg@example.com", "First", "local", hash_password("password123"), is_admin=False)
+        original_id = user["id"]
+        delete_user(original_id)
+
+        # Re-register with same email - should reactivate
+        new_user = create_user("rereg@example.com", "Second", "local", hash_password("newpass456"), is_admin=False)
+
+        # Should be the same user ID (reactivated)
+        assert new_user["id"] == original_id
+        # Updated name
+        assert new_user["name"] == "Second"
+        # No longer deleted
+        assert new_user["deleted_at"] is None
+        # Should be active
+        assert new_user["is_active"] == 1
+
+
+class TestIndexTracking:
+    def test_track_index(self, temp_db):
+        """Test tracking a ShipIt-created index."""
+        from app.services.database import track_index, is_index_tracked
+
+        track_index("shipit-test", user_id="user123")
+
+        is_tracked = is_index_tracked("shipit-test")
+        assert is_tracked == True
+
+    def test_untrack_index(self, temp_db):
+        """Test untracking an index after deletion."""
+        from app.services.database import track_index, untrack_index, is_index_tracked
+
+        track_index("shipit-test", user_id="user123")
+        untrack_index("shipit-test")
+
+        is_tracked = is_index_tracked("shipit-test")
+        assert is_tracked == False
+
+    def test_index_not_tracked(self, temp_db):
+        """Test checking if an index is not tracked."""
+        from app.services.database import is_index_tracked
+
+        is_tracked = is_index_tracked("external-index")
+        assert is_tracked == False
+
+    def test_track_index_idempotent(self, temp_db):
+        """Tracking the same index twice should be idempotent."""
+        from app.services.database import track_index, is_index_tracked
+
+        track_index("shipit-test", user_id="user123")
+        track_index("shipit-test", user_id="user456")  # Second track with different user
+
+        is_tracked = is_index_tracked("shipit-test")
+        assert is_tracked == True
+
+    def test_untrack_nonexistent_index(self, temp_db):
+        """Untracking a non-existent index should not raise error."""
+        from app.services.database import untrack_index
+
+        # Should not raise exception
+        untrack_index("nonexistent-index")

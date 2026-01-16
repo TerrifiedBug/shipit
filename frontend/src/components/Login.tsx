@@ -58,6 +58,7 @@ export function Login({ isSetupMode, onLogin }: LoginProps) {
       <div className="max-w-md w-full">
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
           <div className="text-center mb-8">
+            <span className="text-5xl mb-4 block" role="img" aria-label="ShipIt logo">🚀</span>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ShipIt</h1>
             <p className="mt-2 text-gray-600 dark:text-gray-400">
               {isSetupMode ? 'Create your admin account' : 'Sign in to your account'}

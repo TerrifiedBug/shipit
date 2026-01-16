@@ -97,6 +97,7 @@ docker run -p 80:80 --env-file .env shipit
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `INDEX_PREFIX` | `shipit-` | Prefix for all created indices |
+| `STRICT_INDEX_MODE` | `true` | Block writes to indices not created by ShipIt (prevents accidental overwrites) |
 | `MAX_FILE_SIZE_MB` | `500` | Maximum upload file size in MB |
 | `DATA_DIR` | `/data` | Directory for uploads and database |
 | `SESSION_DURATION_HOURS` | `8` | How long user sessions remain valid |
@@ -122,7 +123,7 @@ The OpenSearch user needs these permissions:
 - `cluster_monitor` - Required for health check endpoint
 - `crud` on `shipit-*` indices - Read/write documents
 - `create_index` on `shipit-*` indices - Create new indices
-- `indices:monitor/stats` and `indices:monitor/settings/get` on `shipit-*` indices - Required for index existence check in History
+- `indices:monitor/stats` and `indices:monitor/settings/get` on `shipit-*` indices - Required for History and strict index mode validation
 - `delete_index` on `shipit-*` indices - Required for "Delete Index" option when cancelling ingestion (optional)
 
 Example OpenSearch security role:
@@ -193,9 +194,10 @@ Admins can manage local users via the **Users** button in the header:
 
 - **Create users**: Set email, name, initial password, and admin status
 - **Edit users**: Update name, toggle admin, reset password
-- **Delete users**: Soft-delete (preserves upload history)
+- **Deactivate/Activate users**: Temporarily disable accounts without deleting
+- **Delete users**: Soft-delete (preserves upload history, allows re-registration)
 
-Users created by admins must change their password on first login.
+Users created by admins must change their password on first login. Deactivated users cannot log in but retain their upload history.
 
 ### API Keys
 
@@ -206,17 +208,47 @@ For programmatic access (scripts, CI/CD pipelines), users can create API keys:
 3. Click **Create New Key**, set name and expiry
 4. Copy the key (shown only once)
 
-Use the API key in requests:
-
-```bash
-curl -H "Authorization: Bearer YOUR_API_KEY" \
-  -F "file=@data.json" \
-  https://shipit.example.com/api/upload
-```
-
 API keys inherit the creating user's permissions and are tracked in audit logs.
 
-## Roadmap (V4+)
+### Programmatic Upload API
+
+Use the `/api/v1/upload` endpoint for single-shot file ingestion:
+
+```bash
+curl -X POST https://shipit.example.com/api/v1/upload \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -F "file=@data.json" \
+  -F "index_name=my-logs" \
+  -F "timestamp_field=time" \
+  -F "include_filename=true"
+```
+
+**Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `file` | Yes | File to upload |
+| `index_name` | Yes | Target index name (prefix added automatically) |
+| `format` | No | Force format: `json`, `ndjson`, `csv`, `tsv`, `ltsv`, `syslog` (auto-detected if omitted) |
+| `timestamp_field` | No | Field to parse as `@timestamp` |
+| `include_filename` | No | Add source filename to each record (`true`/`false`) |
+| `filename_field` | No | Name of filename field (default: `source_file`) |
+
+**Response:**
+
+```json
+{
+  "status": "completed",
+  "index_name": "shipit-my-logs",
+  "records_ingested": 1000,
+  "records_failed": 0,
+  "duration_seconds": 1.23
+}
+```
+
+If any records fail, `status` will be `completed_with_errors` and an `errors` array will be included.
+
+## Roadmap
 
 ### Full Elasticsearch Support
 - Add compatibility with Elasticsearch clusters
@@ -237,9 +269,3 @@ API keys inherit the creating user's permissions and are tracked in audit logs.
 - CSV columns are always strings; convert to numbers, booleans, dates
 - Per-field type dropdown in Configure step
 - Custom date format specification
-
-### Content-Based Format Detection
-- Move away from file extension reliance for format detection
-- Try multiple parsers and use the one that successfully parses the content
-- Would improve handling of `.log` files and extensionless files
-- Challenging: need to define "successful parse" heuristics

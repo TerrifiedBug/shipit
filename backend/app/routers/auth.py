@@ -46,8 +46,8 @@ def get_current_user(request: Request) -> dict | None:
                 if expires_at > datetime.utcnow():
                     update_api_key_last_used(api_key["id"])
                     user = get_user_by_id(api_key["user_id"])
-                    # Check if user is deleted
-                    if user and user.get("deleted_at"):
+                    # Check if user is deleted or deactivated
+                    if user and (user.get("deleted_at") or not user.get("is_active", True)):
                         return None
                     return user
             return None
@@ -60,8 +60,8 @@ def get_current_user(request: Request) -> dict | None:
     if not payload:
         return None
     user = get_user_by_id(payload["sub"])
-    # Check if user is deleted
-    if user and user.get("deleted_at"):
+    # Check if user is deleted or deactivated
+    if user and (user.get("deleted_at") or not user.get("is_active", True)):
         return None
     return user
 
@@ -119,6 +119,10 @@ def login(request: LoginRequest, response: Response):
     if user.get("deleted_at"):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # Check if user is deactivated
+    if not user.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Account has been deactivated")
+
     if not user["password_hash"]:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -172,7 +176,7 @@ def change_password(request: ChangePasswordRequest, user: dict = Depends(require
     # Get fresh user data
     current_user = get_user_by_id(user["id"])
     if not current_user or current_user["auth_type"] != "local":
-        raise HTTPException(status_code=400, detail="Cannot change password for this account")
+        raise HTTPException(status_code=403, detail="Cannot change password for this account")
 
     # Verify current password
     if not verify_password(request.current_password, current_user["password_hash"]):
@@ -281,11 +285,11 @@ async def oidc_callback(
         user = get_user_by_email(user_info.email)
 
         if user:
-            # Check if user is deleted
-            if user.get("deleted_at"):
+            # Check if user is deleted or deactivated
+            if user.get("deleted_at") or not user.get("is_active", True):
                 frontend_url = settings.app_url or "http://localhost:5173"
                 return RedirectResponse(
-                    url=f"{frontend_url}?error=Account has been disabled",
+                    url=f"{frontend_url}?error=Account has been deactivated",
                     status_code=302,
                 )
 

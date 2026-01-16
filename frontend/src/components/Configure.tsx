@@ -83,6 +83,8 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   const [error, setError] = useState<string | null>(null);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [includeFilename, setIncludeFilename] = useState(false);
+  const [filenameField, setFilenameField] = useState('source_file');
 
   const handleFieldNameChange = (index: number, newName: string) => {
     setFieldMappings((prev) =>
@@ -139,6 +141,8 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
         timestamp_field: timestampField,
         field_mappings: mappings,
         excluded_fields: excluded,
+        include_filename: includeFilename,
+        filename_field: filenameField,
       });
 
       // Subscribe to progress updates via SSE
@@ -331,6 +335,37 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                 ? 'Selected field will be parsed and mapped to @timestamp'
                 : 'No timestamp-like fields detected'}
             </p>
+          </div>
+
+          {/* Include Filename */}
+          <div>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={includeFilename}
+                onChange={(e) => setIncludeFilename(e.target.checked)}
+                disabled={isIngesting}
+                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                Add source filename to each record
+              </span>
+            </label>
+            {includeFilename && (
+              <div className="mt-2 ml-6">
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                  Field name
+                </label>
+                <input
+                  type="text"
+                  value={filenameField}
+                  onChange={(e) => setFilenameField(e.target.value)}
+                  disabled={isIngesting}
+                  className="block w-full max-w-xs px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="source_file"
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

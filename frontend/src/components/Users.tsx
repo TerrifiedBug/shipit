@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AdminUser, listUsers, createUser, updateUser, deleteUser } from '../api/client';
+import { AdminUser, listUsers, createUser, updateUser, deleteUser, activateUser, deactivateUser } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -28,6 +28,17 @@ export function Users({ onClose }: UsersProps) {
   const [editIsAdmin, setEditIsAdmin] = useState(false);
   const [editNewPassword, setEditNewPassword] = useState('');
   const [updating, setUpdating] = useState(false);
+
+  // Handle ESC key to close modal (only if no dialogs are open)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !userToDelete && !editingUser && !showCreateForm) {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, userToDelete, editingUser, showCreateForm]);
 
   useEffect(() => {
     loadUsers();
@@ -114,6 +125,22 @@ export function Users({ onClose }: UsersProps) {
     }
   };
 
+  const handleToggleActive = async (user: AdminUser) => {
+    try {
+      if (user.is_active) {
+        const updatedUser = await deactivateUser(user.id);
+        setUsers(users.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
+        addToast(`User ${user.email} deactivated`, 'success');
+      } else {
+        const updatedUser = await activateUser(user.id);
+        setUsers(users.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
+        addToast(`User ${user.email} activated`, 'success');
+      }
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Failed to update user status', 'error');
+    }
+  };
+
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'Never';
     return new Date(dateStr).toLocaleDateString('en-US', {
@@ -123,8 +150,18 @@ export function Users({ onClose }: UsersProps) {
     });
   };
 
+  // Handle backdrop click
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && !userToDelete && !editingUser && !showCreateForm) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={handleBackdropClick}
+    >
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">User Management</h2>
@@ -275,6 +312,11 @@ export function Users({ onClose }: UsersProps) {
                           <h4 className="font-medium text-gray-900 dark:text-white">
                             {user.name || 'Unnamed'}
                           </h4>
+                          {!user.is_active && (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 rounded">
+                              Inactive
+                            </span>
+                          )}
                           {user.is_admin && (
                             <span className="px-2 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 rounded">
                               Admin
@@ -299,6 +341,35 @@ export function Users({ onClose }: UsersProps) {
                     </div>
                     {user.id !== currentUser?.id && (
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleActive(user)}
+                          className={`p-2 ${
+                            user.is_active
+                              ? 'text-gray-500 hover:text-orange-600 dark:text-gray-400 dark:hover:text-orange-400'
+                              : 'text-green-500 hover:text-green-600 dark:text-green-400 dark:hover:text-green-300'
+                          }`}
+                          title={user.is_active ? 'Deactivate user' : 'Activate user'}
+                        >
+                          {user.is_active ? (
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+                              />
+                            </svg>
+                          ) : (
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                              />
+                            </svg>
+                          )}
+                        </button>
                         <button
                           onClick={() => startEdit(user)}
                           className="p-2 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400"

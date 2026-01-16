@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +8,75 @@ from app.services.database import create_user
 
 
 client = TestClient(app)
+
+
+class TestIndexProtection:
+    """Tests for index protection validation."""
+
+    def test_new_index_allowed(self, db):
+        """Test that new indices (not existing in OpenSearch) are allowed."""
+        from app.services.opensearch import validate_index_for_ingestion
+        from opensearchpy.exceptions import TransportError
+
+        with patch("app.services.opensearch.get_client") as mock_get_client:
+            mock_client = MagicMock()
+            # Stats returns 404 for non-existent index
+            mock_client.indices.stats.side_effect = TransportError(404, "index_not_found")
+            mock_get_client.return_value = mock_client
+
+            result = validate_index_for_ingestion("shipit-new-index")
+
+            assert result["exists"] is False
+            assert result["tracked"] is False
+            assert result["requires_tracking"] is True
+
+    def test_tracked_index_allowed(self, db):
+        """Test that tracked indices are always allowed (no OpenSearch call needed)."""
+        from app.services.opensearch import validate_index_for_ingestion
+        from app.services.database import track_index
+
+        # Track the index first
+        track_index("shipit-tracked", user_id="user123")
+
+        with patch("app.services.opensearch.get_client") as mock_get_client:
+            result = validate_index_for_ingestion("shipit-tracked")
+
+            assert result["exists"] is True
+            assert result["tracked"] is True
+            assert result["requires_tracking"] is False
+            # Tracked indices don't need to call OpenSearch
+            mock_get_client.assert_not_called()
+
+    def test_external_index_blocked_in_strict_mode(self, db):
+        """Test that external indices are blocked in strict mode."""
+        from app.services.opensearch import validate_index_for_ingestion
+
+        with patch("app.services.opensearch.get_client") as mock_get_client:
+            mock_client = MagicMock()
+            # Stats succeeds = index exists
+            mock_client.indices.stats.return_value = {"indices": {}}
+            mock_get_client.return_value = mock_client
+
+            # Default is strict_index_mode=True
+            with pytest.raises(ValueError, match="not created by ShipIt"):
+                validate_index_for_ingestion("shipit-external")
+
+    def test_external_index_allowed_when_not_strict(self, db):
+        """Test that external indices are allowed when strict mode is off (skips exists check)."""
+        from app.services.opensearch import validate_index_for_ingestion
+
+        with patch("app.services.opensearch.settings") as mock_settings:
+            mock_settings.strict_index_mode = False
+
+            with patch("app.services.opensearch.get_client") as mock_get_client:
+                result = validate_index_for_ingestion("shipit-external")
+
+                # When strict mode is off, we skip the exists check entirely
+                assert result["exists"] is False  # We didn't check, assume new
+                assert result["tracked"] is False
+                assert result["requires_tracking"] is True
+                # Verify we didn't call OpenSearch
+                mock_get_client.assert_not_called()
 
 
 class TestDeleteIndexEndpoint:
@@ -80,3 +149,23 @@ class TestDeleteIndexEndpoint:
         logs = list_audit_logs(action="delete_index")
         assert len(logs) >= 1
         assert any(log["target"] == "shipit-audit-test" for log in logs)
+
+    def test_delete_index_untracks_index(self, db):
+        """Test that deleting an index removes it from tracking."""
+        from app.services.database import track_index, is_index_tracked
+
+        cookies = self._login(db)
+
+        # Track the index first
+        track_index("shipit-tracked-delete", user_id="user123")
+        assert is_index_tracked("shipit-tracked-delete") is True
+
+        with patch("app.routers.indexes.delete_index") as mock_delete:
+            mock_delete.return_value = True
+
+            response = client.delete("/api/indexes/shipit-tracked-delete", cookies=cookies)
+
+            assert response.status_code == 200
+
+        # Verify index is no longer tracked
+        assert is_index_tracked("shipit-tracked-delete") is False
