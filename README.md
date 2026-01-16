@@ -13,6 +13,8 @@ In many organizations, OpenSearch infrastructure is managed by a dedicated platf
 
 ShipIt bridges this gap by providing a simple web interface for self-service data ingestion. No pipeline configuration, no YAML files, no command-line tools - just drag, drop, and query.
 
+> **Note**: ShipIt is a controlled self-service tool for ad-hoc investigations and analysis. It is not a replacement for proper ingestion pipelines and is not intended for production data flows. Use it for temporary, exploratory work where you need data in OpenSearch quickly.
+
 ## Tech Stack
 
 - **Frontend**: React + TypeScript with Vite for fast builds and Tailwind CSS for styling
