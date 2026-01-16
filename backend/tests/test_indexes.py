@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +8,75 @@ from app.services.database import create_user
 
 
 client = TestClient(app)
+
+
+class TestIndexProtection:
+    """Tests for index protection validation."""
+
+    def test_new_index_allowed(self, db):
+        """Test that new indices (not existing in OpenSearch) are allowed."""
+        from app.services.opensearch import validate_index_for_ingestion
+
+        with patch("app.services.opensearch.get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.indices.exists.return_value = False
+            mock_get_client.return_value = mock_client
+
+            result = validate_index_for_ingestion("shipit-new-index")
+
+            assert result["exists"] is False
+            assert result["tracked"] is False
+            assert result["requires_tracking"] is True
+
+    def test_tracked_index_allowed(self, db):
+        """Test that tracked indices are always allowed."""
+        from app.services.opensearch import validate_index_for_ingestion
+        from app.services.database import track_index
+
+        # Track the index first
+        track_index("shipit-tracked", user_id="user123")
+
+        with patch("app.services.opensearch.get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.indices.exists.return_value = True
+            mock_get_client.return_value = mock_client
+
+            result = validate_index_for_ingestion("shipit-tracked")
+
+            assert result["exists"] is True
+            assert result["tracked"] is True
+            assert result["requires_tracking"] is False
+
+    def test_external_index_blocked_in_strict_mode(self, db):
+        """Test that external indices are blocked in strict mode."""
+        from app.services.opensearch import validate_index_for_ingestion
+
+        with patch("app.services.opensearch.get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.indices.exists.return_value = True
+            mock_get_client.return_value = mock_client
+
+            # Default is strict_index_mode=True
+            with pytest.raises(ValueError, match="not created by ShipIt"):
+                validate_index_for_ingestion("shipit-external")
+
+    def test_external_index_allowed_when_not_strict(self, db):
+        """Test that external indices are allowed when strict mode is off."""
+        from app.services.opensearch import validate_index_for_ingestion
+
+        with patch("app.services.opensearch.get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.indices.exists.return_value = True
+            mock_get_client.return_value = mock_client
+
+            with patch("app.services.opensearch.settings") as mock_settings:
+                mock_settings.strict_index_mode = False
+
+                result = validate_index_for_ingestion("shipit-external")
+
+                assert result["exists"] is True
+                assert result["tracked"] is False
+                assert result["requires_tracking"] is True
 
 
 class TestDeleteIndexEndpoint:

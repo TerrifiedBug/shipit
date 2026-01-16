@@ -140,6 +140,55 @@ def list_indexes(prefix: str) -> set[str] | None:
         return None
 
 
+def validate_index_for_ingestion(index_name: str) -> dict[str, Any]:
+    """
+    Validate that an index can be written to.
+
+    Checks if the index exists in OpenSearch and whether it's tracked by ShipIt.
+    In strict mode, raises an error if the index exists but wasn't created by ShipIt.
+
+    Args:
+        index_name: Full index name (with prefix)
+
+    Returns:
+        dict with keys:
+            - exists: bool - whether index exists in OpenSearch
+            - tracked: bool - whether index is tracked by ShipIt
+            - requires_tracking: bool - whether index needs to be tracked after creation
+
+    Raises:
+        ValueError: If index exists but not tracked and strict mode is enabled
+    """
+    from app.services.database import is_index_tracked
+
+    client = get_client()
+
+    # Check if index exists in OpenSearch
+    exists = client.indices.exists(index=index_name)
+
+    if not exists:
+        # New index - will need to be tracked after creation
+        return {"exists": False, "tracked": False, "requires_tracking": True}
+
+    # Index exists - check if it's tracked by ShipIt
+    tracked = is_index_tracked(index_name)
+
+    if tracked:
+        # Tracked index - safe to write, no additional tracking needed
+        return {"exists": True, "tracked": True, "requires_tracking": False}
+
+    # External index (exists but not tracked)
+    if settings.strict_index_mode:
+        raise ValueError(
+            f"Index '{index_name}' exists but was not created by ShipIt. "
+            f"Writing to external indices is blocked in strict mode. "
+            f"Set STRICT_INDEX_MODE=false to allow writes to external indices."
+        )
+
+    # Strict mode off - allow but flag for tracking
+    return {"exists": True, "tracked": False, "requires_tracking": True}
+
+
 def validate_index_name(index_name: str) -> tuple[bool, str]:
     """
     Validate that an index name is valid and has the required prefix.
