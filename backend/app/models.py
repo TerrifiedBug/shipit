@@ -33,6 +33,7 @@ class IngestRequest(BaseModel):
     timestamp_field: str | None = None
     field_mappings: dict[str, str] = {}
     excluded_fields: list[str] = []
+    field_types: dict[str, str] = {}
     include_filename: bool = False
     filename_field: str = "source_file"
 

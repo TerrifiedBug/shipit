@@ -85,6 +85,17 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [includeFilename, setIncludeFilename] = useState(false);
   const [filenameField, setFilenameField] = useState('source_file');
+  const [fieldTypes, setFieldTypes] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    data.fields.forEach(f => {
+      initial[f.name] = f.type;
+    });
+    return initial;
+  });
+
+  const setFieldType = (fieldName: string, type: string) => {
+    setFieldTypes(prev => ({ ...prev, [fieldName]: type }));
+  };
 
   // Track if form has been modified
   const isDirty = useMemo(() => {
@@ -93,10 +104,12 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
     if (includeFilename) return true;
     if (filenameField !== 'source_file') return true;
     // Check if any field mappings have changed
-    return fieldMappings.some(
+    if (fieldMappings.some(
       (f, i) => f.excluded || f.mappedName !== data.fields[i].name
-    );
-  }, [indexName, timestampField, includeFilename, filenameField, fieldMappings, data.fields]);
+    )) return true;
+    // Check if any field types have changed
+    return data.fields.some(f => fieldTypes[f.name] !== f.type);
+  }, [indexName, timestampField, includeFilename, filenameField, fieldMappings, fieldTypes, data.fields]);
 
   const handleBack = () => {
     if (isDirty && !isIngesting) {
@@ -157,12 +170,21 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
         }
       }
 
+      // Build field type overrides (only include changed types)
+      const typeOverrides: Record<string, string> = {};
+      data.fields.forEach(f => {
+        if (fieldTypes[f.name] && fieldTypes[f.name] !== f.type) {
+          typeOverrides[f.name] = fieldTypes[f.name];
+        }
+      });
+
       // Start ingestion (returns immediately)
       const startResult = await startIngest(data.upload_id, {
         index_name: indexName,
         timestamp_field: timestampField,
         field_mappings: mappings,
         excluded_fields: excluded,
+        field_types: typeOverrides,
         include_filename: includeFilename,
         filename_field: filenameField,
       });
@@ -430,9 +452,17 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                       {field.originalName}
                     </td>
                     <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
-                      <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">
-                        {fieldInfo?.type || 'string'}
-                      </span>
+                      <select
+                        value={fieldTypes[field.originalName] || fieldInfo?.type || 'string'}
+                        onChange={(e) => setFieldType(field.originalName, e.target.value)}
+                        disabled={field.excluded || isIngesting}
+                        className="px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                      >
+                        <option value="string">string</option>
+                        <option value="integer">integer</option>
+                        <option value="float">float</option>
+                        <option value="boolean">boolean</option>
+                      </select>
                     </td>
                     <td className="px-4 py-2">
                       <input
