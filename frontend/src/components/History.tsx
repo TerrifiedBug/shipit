@@ -305,6 +305,16 @@ export function History({ onClose }: HistoryProps) {
                                 <span className="text-gray-500 dark:text-gray-400">Format:</span>{' '}
                                 <span className="text-gray-900 dark:text-white">{upload.file_format}</span>
                               </div>
+                              <div>
+                                <span className="text-gray-500 dark:text-gray-400">Upload method:</span>{' '}
+                                <span className="text-gray-900 dark:text-white">
+                                  {upload.upload_method === 'api' ? (
+                                    <>API{upload.api_key_name && <span className="text-gray-500 dark:text-gray-400"> ({upload.api_key_name})</span>}</>
+                                  ) : (
+                                    'Web'
+                                  )}
+                                </span>
+                              </div>
                               {upload.user_name && (
                                 <div>
                                   <span className="text-gray-500 dark:text-gray-400">Uploaded by:</span>{' '}
@@ -503,6 +513,17 @@ function UploadDetails({ upload, onClose }: { upload: UploadRecord; onClose: () 
               <p className="text-gray-900 dark:text-white">{upload.user_name}</p>
             </div>
           )}
+
+          <div>
+            <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Upload Method</label>
+            <p className="text-gray-900 dark:text-white">
+              {upload.upload_method === 'api' ? (
+                <>API{upload.api_key_name && <span className="text-gray-500 dark:text-gray-400"> ({upload.api_key_name})</span>}</>
+              ) : (
+                'Web'
+              )}
+            </p>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>

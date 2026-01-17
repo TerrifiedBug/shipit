@@ -249,6 +249,8 @@ export interface UploadRecord {
   index_exists: boolean | null;
   user_name: string | null;
   user_email: string | null;
+  upload_method: 'web' | 'api';
+  api_key_name: string | null;
 }
 
 export interface HistoryResponse {
