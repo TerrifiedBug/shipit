@@ -186,6 +186,51 @@ export async function uploadFiles(files: File[]): Promise<UploadResponse> {
   return response.json();
 }
 
+export function uploadFilesWithProgress(
+  files: File[],
+  onProgress: (percent: number) => void
+): Promise<UploadResponse> {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const percent = Math.round((e.loaded / e.total) * 100);
+        onProgress(percent);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const response = JSON.parse(xhr.responseText);
+          resolve(response);
+        } catch {
+          reject(new Error('Invalid response from server'));
+        }
+      } else {
+        try {
+          const error = JSON.parse(xhr.responseText);
+          reject(new Error(error.detail || 'Upload failed'));
+        } catch {
+          reject(new Error('Upload failed'));
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new Error('Network error during upload'));
+    };
+
+    xhr.open('POST', `${API_BASE}/api/upload`);
+    xhr.withCredentials = true;
+    xhr.send(formData);
+  });
+}
+
 export async function getPreview(uploadId: string): Promise<PreviewResponse> {
   const response = await fetch(`${API_BASE}/api/upload/${uploadId}/preview`, {
     credentials: 'include',

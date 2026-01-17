@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { uploadFiles, UploadResponse } from '../api/client';
+import { uploadFilesWithProgress, UploadResponse } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 
 interface UploadProps {
@@ -15,6 +15,7 @@ function formatFileSize(bytes: number): string {
 export function Upload({ onUploadComplete }: UploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { addToast } = useToast();
@@ -23,9 +24,12 @@ export function Upload({ onUploadComplete }: UploadProps) {
     setError(null);
     setSelectedFiles(files);
     setIsUploading(true);
+    setUploadProgress(0);
 
     try {
-      const result = await uploadFiles(files);
+      const result = await uploadFilesWithProgress(files, (percent) => {
+        setUploadProgress(percent);
+      });
       onUploadComplete(result);
       addToast(files.length > 1 ? 'Files uploaded successfully' : 'File uploaded successfully', 'success');
       setSelectedFiles([]);
@@ -33,6 +37,7 @@ export function Upload({ onUploadComplete }: UploadProps) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setIsUploading(false);
+      setUploadProgress(0);
     }
   }, [onUploadComplete, addToast]);
 
@@ -79,37 +84,41 @@ export function Upload({ onUploadComplete }: UploadProps) {
       >
         <div className="text-center">
           {isUploading ? (
-            <>
+            <div className="w-full max-w-md px-4">
               <svg
-                className="mx-auto h-12 w-12 text-indigo-500 animate-spin"
+                className="mx-auto h-12 w-12 text-indigo-500"
                 fill="none"
                 viewBox="0 0 24 24"
+                stroke="currentColor"
               >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
                 <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
                 />
               </svg>
-              <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">
+              <p className="mt-4 text-lg font-medium text-gray-700 dark:text-gray-200">
                 Uploading {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''}...
               </p>
+              {/* Progress bar */}
+              <div className="mt-4 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+                <div
+                  className="bg-indigo-500 h-full rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+              <p className="mt-2 text-2xl font-semibold text-indigo-600 dark:text-indigo-400">
+                {uploadProgress}%
+              </p>
               {selectedFiles.length > 0 && (
-                <ul className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                <ul className="mt-3 text-sm text-gray-500 dark:text-gray-400">
                   {selectedFiles.map((file, i) => (
                     <li key={i}>{file.name} ({formatFileSize(file.size)})</li>
                   ))}
                 </ul>
               )}
-            </>
+            </div>
           ) : (
             <>
               <svg
