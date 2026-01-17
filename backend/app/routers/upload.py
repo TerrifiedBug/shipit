@@ -287,6 +287,79 @@ async def get_preview(upload_id: str):
     )
 
 
+@router.post("/{upload_id}/reparse")
+async def reparse_upload(
+    upload_id: str,
+    format: str = Form(...),
+    user: dict = Depends(require_auth),
+):
+    """Re-parse uploaded file with a different format."""
+    safe_id = _sanitize_upload_id(upload_id)
+    upload = get_pending_upload(safe_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    # Get all file paths from the upload
+    file_paths = upload.get("file_paths", [])
+    if not file_paths and upload.get("file_path"):
+        file_paths = [upload["file_path"]]
+
+    if not file_paths:
+        raise HTTPException(status_code=400, detail="No files found for upload")
+
+    # Validate format
+    valid_formats = ["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog", "logfmt", "raw"]
+    if format not in valid_formats:
+        raise HTTPException(status_code=400, detail=f"Invalid format: {format}")
+
+    # Parse with new format
+    try:
+        combined_preview = []
+        for file_path in file_paths:
+            path = Path(file_path)
+            if not path.exists():
+                continue
+            preview_records = parse_preview(path, format, limit=100)
+            combined_preview.extend(preview_records)
+            if len(combined_preview) >= 100:
+                combined_preview = combined_preview[:100]
+                break
+
+        # Validate field count
+        if settings.max_fields_per_document > 0 and combined_preview:
+            is_valid, max_found = validate_field_count(
+                combined_preview, settings.max_fields_per_document
+            )
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Document contains {max_found} fields, which exceeds the maximum of {settings.max_fields_per_document}."
+                )
+
+        fields = infer_fields(combined_preview)
+
+        # Update upload record with new format
+        update_pending_upload(safe_id, file_format=format)
+
+        # Update cache
+        _upload_cache[safe_id] = {
+            "file_paths": [Path(p) for p in file_paths],
+            "preview": combined_preview,
+            "fields": fields,
+        }
+
+        return {
+            "upload_id": safe_id,
+            "file_format": format,
+            "preview": combined_preview[:100],
+            "fields": [{"name": f["name"], "type": f["type"]} for f in fields],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse as {format}: {str(e)}")
+
+
 def _run_ingestion_task(
     upload_id: str,
     file_paths: list[Path],
