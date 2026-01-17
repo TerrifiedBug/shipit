@@ -51,6 +51,18 @@ def _init_uploads_table(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migration: add upload_method column if it doesn't exist
+    try:
+        conn.execute("ALTER TABLE uploads ADD COLUMN upload_method TEXT DEFAULT 'web'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Migration: add api_key_name column if it doesn't exist
+    try:
+        conn.execute("ALTER TABLE uploads ADD COLUMN api_key_name TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
 
 def _init_users_table(conn: sqlite3.Connection) -> None:
     """Create users table."""
@@ -206,8 +218,20 @@ def create_upload(
     file_sizes: list[int],
     file_format: str,
     user_id: str | None = None,
+    upload_method: str = "web",
+    api_key_name: str | None = None,
 ) -> dict[str, Any]:
-    """Create a new upload record for one or more files."""
+    """Create a new upload record for one or more files.
+
+    Args:
+        upload_id: Unique identifier for this upload
+        filenames: List of uploaded filenames
+        file_sizes: List of file sizes in bytes
+        file_format: Detected file format (json_array, ndjson, csv, etc.)
+        user_id: ID of the user performing the upload (optional)
+        upload_method: "web" for UI uploads, "api" for API uploads
+        api_key_name: Name of the API key if upload_method is "api"
+    """
     # Store filenames as JSON array, total size
     filename_json = json.dumps(filenames)
     total_size = sum(file_sizes)
@@ -215,10 +239,10 @@ def create_upload(
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO uploads (id, filename, file_size, file_format, status, user_id)
-            VALUES (?, ?, ?, ?, 'pending', ?)
+            INSERT INTO uploads (id, filename, file_size, file_format, status, user_id, upload_method, api_key_name)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
             """,
-            (upload_id, filename_json, total_size, file_format, user_id),
+            (upload_id, filename_json, total_size, file_format, user_id, upload_method, api_key_name),
         )
     return get_upload(upload_id)
 
