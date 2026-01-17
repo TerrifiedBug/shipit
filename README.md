@@ -48,6 +48,7 @@ ShipIt is designed for controlled self-service, with guardrails to prevent accid
 - **Multi-file upload**: Combine multiple files of the same format into a single index
 - **Auto-detection**: File format and field type inference
 - **Field mapping**: Rename, exclude, and configure fields before ingestion
+- **Field type coercion**: Override inferred types (string, integer, float, boolean)
 - **Timestamp parsing**: Automatic UTC conversion for various formats
 - **Real-time progress**: Live ingestion status via Server-Sent Events
 - **Upload history**: Track all uploads with user attribution and audit trail
@@ -208,6 +209,19 @@ Supported formats:
 - Nginx/Apache: `17/May/2015:08:05:02 +0000`
 - Epoch seconds: `1705312200`
 - Epoch milliseconds: `1705312200000`
+
+## Field Type Coercion
+
+ShipIt automatically infers field types from your data, but you can override them in the Configure step using the type dropdown for each field. Supported types:
+
+| Type | Coercion Logic |
+|------|----------------|
+| `string` | Converts any value to string |
+| `integer` | Parses as integer (handles "1.0" → 1) |
+| `float` | Parses as floating point number |
+| `boolean` | Accepts true/false, 1/0, yes/no, on/off |
+
+Values that fail coercion become `null` and the record is still ingested. This ensures OpenSearch dynamic mapping picks up the correct type for your fields.
 
 ## Authentication
 
