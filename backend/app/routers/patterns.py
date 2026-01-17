@@ -135,7 +135,7 @@ async def create_pattern(
         name=data.name,
         pattern_type=data.type,
         pattern=data.pattern,
-        user_id=user["username"],
+        user_id=user["email"],
         description=data.description,
         test_sample=data.test_sample,
     )
@@ -233,7 +233,7 @@ async def create_grok_pattern(
     pattern = database.create_grok_pattern(
         name=data.name,
         regex=data.regex,
-        user_id=user["username"],
+        user_id=user["email"],
         description=data.description,
     )
 
