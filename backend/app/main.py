@@ -9,6 +9,7 @@ from app.config import settings
 from app.routers import admin, api_upload, audit, auth, health, history, indexes, keys, upload
 from app.routers.auth import get_current_user
 from app.services.database import init_db
+from app.services.retention import start_retention_task, stop_retention_task
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -49,7 +50,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     """Initialize resources on startup."""
     init_db()
+    start_retention_task()
     yield
+    stop_retention_task()
 
 
 app = FastAPI(

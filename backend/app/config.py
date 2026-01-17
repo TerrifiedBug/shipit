@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # Rate limiting
     upload_rate_limit_per_minute: int = 10
 
+    # Index retention
+    index_retention_days: int = 0  # 0 to disable auto-deletion
+
     # Hardcoded data directory (Docker volume mount point)
     data_dir: str = "/data"
 
