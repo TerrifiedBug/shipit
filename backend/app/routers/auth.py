@@ -23,6 +23,8 @@ from app.services.database import (
     get_failed_login_count,
     clear_failed_logins,
     is_account_locked,
+    delete_session,
+    delete_other_sessions,
 )
 from app.services.rate_limit import RateLimiter
 
@@ -257,11 +259,19 @@ def get_me(user: dict = Depends(require_auth)):
 
 @router.post("/logout")
 def logout(response: Response, http_request: Request = None):
-    """Logout - clear session cookie."""
+    """Logout - clear session cookie and invalidate session in database."""
     # Log logout if we can identify the user
     user = get_current_user(http_request) if http_request else None
     if user:
         audit.log_logout(user["id"], user.get("email", ""), _get_client_ip(http_request))
+
+    # Delete session from database
+    if http_request:
+        session_token = http_request.cookies.get("session")
+        if session_token:
+            payload = verify_session_token(session_token)
+            if payload and payload.get("sid"):
+                delete_session(payload["sid"])
 
     response.delete_cookie(key="session")
     return {"message": "Logged out"}
@@ -273,8 +283,16 @@ class ChangePasswordRequest(BaseModel):
 
 
 @router.post("/change-password")
-def change_password(request: ChangePasswordRequest, user: dict = Depends(require_auth)):
-    """Change the current user's password."""
+def change_password(
+    request: ChangePasswordRequest,
+    http_request: Request,
+    user: dict = Depends(require_auth),
+):
+    """Change the current user's password.
+
+    Invalidates all other sessions for security - the user stays logged in
+    on the current device but is logged out everywhere else.
+    """
     # Get fresh user data
     current_user = get_user_by_id(user["id"])
     if not current_user or current_user["auth_type"] != "local":
@@ -295,6 +313,17 @@ def change_password(request: ChangePasswordRequest, user: dict = Depends(require
         password_hash=hash_password(request.new_password),
         password_change_required=0,
     )
+
+    # Invalidate all other sessions for security
+    session_token = http_request.cookies.get("session")
+    if session_token:
+        payload = verify_session_token(session_token)
+        if payload and payload.get("sid"):
+            sessions_invalidated = delete_other_sessions(user["id"], payload["sid"])
+            return {
+                "message": "Password changed successfully",
+                "sessions_invalidated": sessions_invalidated,
+            }
 
     return {"message": "Password changed successfully"}
 

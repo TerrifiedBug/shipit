@@ -159,6 +159,20 @@ def _init_failed_logins_table(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_failed_logins_attempted_at ON failed_logins(attempted_at)")
 
 
+def _init_sessions_table(conn: sqlite3.Connection) -> None:
+    """Create sessions table for tracking active user sessions."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)")
+
+
 def init_db() -> None:
     """Initialize the database schema."""
     with get_connection() as conn:
@@ -168,6 +182,7 @@ def init_db() -> None:
         _init_audit_log_table(conn)
         _init_shipit_indices_table(conn)
         _init_failed_logins_table(conn)
+        _init_sessions_table(conn)
 
 
 @contextmanager
@@ -896,3 +911,95 @@ def is_account_locked(user_id: str, lockout_minutes: int) -> bool:
     from app.config import settings
     failed_count = get_failed_login_count(user_id, lockout_minutes)
     return failed_count >= settings.account_lockout_attempts
+
+
+# Session management functions
+
+
+def create_session(user_id: str, expires_at: datetime) -> str:
+    """
+    Create a new session for a user.
+
+    Args:
+        user_id: The ID of the user.
+        expires_at: When the session expires.
+
+    Returns:
+        The session ID.
+    """
+    session_id = str(uuid.uuid4())
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)",
+            (session_id, user_id, expires_at.isoformat()),
+        )
+    return session_id
+
+
+def get_session(session_id: str) -> dict | None:
+    """
+    Get a session by ID.
+
+    Args:
+        session_id: The session ID.
+
+    Returns:
+        The session record or None if not found/expired.
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM sessions WHERE id = ? AND expires_at > ?",
+            (session_id, datetime.utcnow().isoformat()),
+        ).fetchone()
+    if row:
+        return dict(row)
+    return None
+
+
+def delete_session(session_id: str) -> None:
+    """
+    Delete a specific session.
+
+    Args:
+        session_id: The session ID to delete.
+    """
+    with get_connection() as conn:
+        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+
+
+def delete_other_sessions(user_id: str, current_session_id: str) -> int:
+    """
+    Delete all sessions for a user except the current one.
+
+    Used when changing password to invalidate other sessions.
+
+    Args:
+        user_id: The ID of the user.
+        current_session_id: The session ID to keep.
+
+    Returns:
+        The number of sessions deleted.
+    """
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM sessions WHERE user_id = ? AND id != ?",
+            (user_id, current_session_id),
+        )
+        return cursor.rowcount
+
+
+def cleanup_expired_sessions() -> int:
+    """
+    Delete all expired sessions.
+
+    Should be called periodically to clean up the sessions table.
+
+    Returns:
+        The number of sessions deleted.
+    """
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM sessions WHERE expires_at < ?",
+            (datetime.utcnow().isoformat(),),
+        )
+        return cursor.rowcount

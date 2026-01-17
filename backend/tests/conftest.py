@@ -13,6 +13,11 @@ def db(tmp_path):
     db_path = tmp_path / "test.db"
     with patch.object(database, "get_db_path", return_value=db_path):
         database.init_db()
+        # Clear rate limiters to avoid test pollution
+        from app.services.rate_limit import upload_rate_limiter
+        from app.routers.auth import login_rate_limiter
+        upload_rate_limiter.clear()
+        login_rate_limiter.clear()
         yield db_path
 
 

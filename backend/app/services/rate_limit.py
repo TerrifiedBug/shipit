@@ -63,6 +63,11 @@ class RateLimiter:
             self._cleanup_old_timestamps(key, now)
             return max(0, max_requests - len(self._timestamps[key]))
 
+    def clear(self) -> None:
+        """Clear all rate limit data. Useful for testing."""
+        with self._lock:
+            self._timestamps.clear()
+
 
 # Global rate limiter instance for uploads
 upload_rate_limiter = RateLimiter(window_seconds=60)
