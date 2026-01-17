@@ -8,6 +8,7 @@ import { Login } from './components/Login';
 import { ApiKeys } from './components/ApiKeys';
 import { Users } from './components/Users';
 import { Audit } from './components/Audit';
+import { PatternLibrary } from './components/PatternLibrary';
 import { PasswordChangeModal } from './components/PasswordChangeModal';
 import { IngestResponse, UploadResponse, deletePendingUpload } from './api/client';
 import { useTheme } from './contexts/ThemeContext';
@@ -150,6 +151,7 @@ function App() {
   const [showApiKeys, setShowApiKeys] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
+  const [showPatterns, setShowPatterns] = useState(false);
 
   // Track pending upload for cleanup on tab close
   const pendingUploadRef = useRef<string | null>(null);
@@ -257,6 +259,12 @@ function App() {
                 </>
               ) : null}
               <button
+                onClick={() => setShowPatterns(true)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Patterns
+              </button>
+              <button
                 onClick={() => setShowApiKeys(true)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
               >
@@ -278,6 +286,7 @@ function App() {
       {showApiKeys && <ApiKeys onClose={() => setShowApiKeys(false)} />}
       {showUsers && <Users onClose={() => setShowUsers(false)} />}
       {showAudit && <Audit onClose={() => setShowAudit(false)} />}
+      {showPatterns && <PatternLibrary onClose={() => setShowPatterns(false)} />}
       <main>
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
           {state === 'upload' && (
@@ -288,6 +297,7 @@ function App() {
               data={uploadData}
               onBack={handleReset}
               onContinue={handleContinueToConfigure}
+              onDataUpdate={setUploadData}
             />
           )}
           {state === 'configure' && uploadData && (

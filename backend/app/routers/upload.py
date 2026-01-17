@@ -9,10 +9,11 @@ import uuid
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.config import settings
+from app.routers.auth import require_auth
 from app.models import FieldInfo, IngestRequest, PreviewResponse, UploadResponse
 from app.services import database as db
 from app.services.ingestion import count_records, ingest_file

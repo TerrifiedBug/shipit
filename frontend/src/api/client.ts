@@ -150,12 +150,15 @@ export interface FieldInfo {
   type: string;
 }
 
+// Supported file formats for parsing
+export type FileFormat = 'json_array' | 'ndjson' | 'csv' | 'tsv' | 'ltsv' | 'syslog' | 'logfmt' | 'raw';
+
 export interface UploadResponse {
   upload_id: string;
   filename: string;
   filenames: string[];
   file_size: number;
-  file_format: 'json_array' | 'ndjson' | 'csv' | 'tsv' | 'ltsv' | 'syslog';
+  file_format: FileFormat;
   preview: Record<string, unknown>[];
   fields: FieldInfo[];
 }
@@ -163,7 +166,7 @@ export interface UploadResponse {
 export interface PreviewResponse {
   upload_id: string;
   filename: string;
-  file_format: 'json_array' | 'ndjson' | 'csv';
+  file_format: FileFormat;
   preview: Record<string, unknown>[];
   fields: FieldInfo[];
 }
@@ -287,7 +290,7 @@ export interface UploadRecord {
   id: string;
   filename: string;
   file_size: number;
-  file_format: 'json_array' | 'ndjson' | 'csv';
+  file_format: FileFormat;
   index_name: string | null;
   timestamp_field: string | null;
   field_mappings: Record<string, string> | null;
@@ -600,4 +603,234 @@ export async function getAppSettings(): Promise<AppSettings> {
     return { index_retention_days: 0 };
   }
   return response.json();
+}
+
+// Reparse function for format override
+export async function reparseUpload(
+  uploadId: string,
+  format: FileFormat
+): Promise<PreviewResponse> {
+  const formData = new FormData();
+  formData.append('format', format);
+
+  const response = await fetch(`${API_BASE}/api/upload/${uploadId}/reparse`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to reparse file');
+  }
+
+  return response.json();
+}
+
+// Pattern types and functions
+export interface Pattern {
+  id: string;
+  name: string;
+  type: 'regex' | 'grok';
+  pattern: string;
+  description: string | null;
+  test_sample: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PatternCreate {
+  name: string;
+  type: 'regex' | 'grok';
+  pattern: string;
+  description?: string;
+  test_sample?: string;
+}
+
+export interface PatternUpdate {
+  name?: string;
+  type?: 'regex' | 'grok';
+  pattern?: string;
+  description?: string;
+  test_sample?: string;
+}
+
+export interface GrokPattern {
+  id: string;
+  name: string;
+  regex: string;
+  description: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  builtin: boolean;
+}
+
+export interface BuiltinGrokPattern {
+  name: string;
+  regex: string;
+  description: string;
+  builtin: true;
+}
+
+export interface GrokPatternCreate {
+  name: string;
+  regex: string;
+  description?: string;
+}
+
+export interface GrokPatternUpdate {
+  regex?: string;
+  description?: string;
+}
+
+export interface PatternTestRequest {
+  pattern: string;
+  pattern_type: 'regex' | 'grok';
+  test_text: string;
+}
+
+export interface PatternTestResponse {
+  success: boolean;
+  matches: Record<string, string> | null;
+  error: string | null;
+}
+
+// Custom patterns CRUD
+export async function listPatterns(): Promise<Pattern[]> {
+  const response = await fetch(`${API_BASE}/api/patterns`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to list patterns');
+  }
+  return response.json();
+}
+
+export async function createPattern(data: PatternCreate): Promise<Pattern> {
+  const response = await fetch(`${API_BASE}/api/patterns`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to create pattern');
+  }
+  return response.json();
+}
+
+export async function getPattern(patternId: string): Promise<Pattern> {
+  const response = await fetch(`${API_BASE}/api/patterns/${patternId}`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Pattern not found');
+  }
+  return response.json();
+}
+
+export async function updatePattern(patternId: string, data: PatternUpdate): Promise<Pattern> {
+  const response = await fetch(`${API_BASE}/api/patterns/${patternId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to update pattern');
+  }
+  return response.json();
+}
+
+export async function deletePattern(patternId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/patterns/${patternId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete pattern');
+  }
+}
+
+export async function testPattern(data: PatternTestRequest): Promise<PatternTestResponse> {
+  const response = await fetch(`${API_BASE}/api/patterns/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to test pattern');
+  }
+  return response.json();
+}
+
+// Grok pattern components
+export async function listBuiltinGrokPatterns(): Promise<BuiltinGrokPattern[]> {
+  const response = await fetch(`${API_BASE}/api/patterns/grok/builtin`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to list built-in grok patterns');
+  }
+  return response.json();
+}
+
+export async function listGrokPatterns(): Promise<GrokPattern[]> {
+  const response = await fetch(`${API_BASE}/api/patterns/grok`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to list grok patterns');
+  }
+  return response.json();
+}
+
+export async function createGrokPattern(data: GrokPatternCreate): Promise<GrokPattern> {
+  const response = await fetch(`${API_BASE}/api/patterns/grok`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to create grok pattern');
+  }
+  return response.json();
+}
+
+export async function updateGrokPattern(patternId: string, data: GrokPatternUpdate): Promise<GrokPattern> {
+  const response = await fetch(`${API_BASE}/api/patterns/grok/${patternId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to update grok pattern');
+  }
+  return response.json();
+}
+
+export async function deleteGrokPattern(patternId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/patterns/grok/${patternId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete grok pattern');
+  }
 }

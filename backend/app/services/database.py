@@ -190,6 +190,41 @@ def _init_sessions_table(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)")
 
 
+def _init_patterns_table(conn: sqlite3.Connection) -> None:
+    """Create patterns table for storing custom parsing patterns."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS patterns (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            pattern TEXT NOT NULL,
+            description TEXT,
+            test_sample TEXT,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_patterns_name ON patterns(name)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_patterns_created_by ON patterns(created_by)")
+
+
+def _init_grok_patterns_table(conn: sqlite3.Connection) -> None:
+    """Create grok_patterns table for storing reusable grok pattern components."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS grok_patterns (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            regex TEXT NOT NULL,
+            description TEXT,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_grok_patterns_name ON grok_patterns(name)")
+
+
 def init_db() -> None:
     """Initialize the database schema."""
     with get_connection() as conn:
@@ -200,6 +235,8 @@ def init_db() -> None:
         _init_shipit_indices_table(conn)
         _init_failed_logins_table(conn)
         _init_sessions_table(conn)
+        _init_patterns_table(conn)
+        _init_grok_patterns_table(conn)
 
 
 @contextmanager
@@ -1042,3 +1079,179 @@ def cleanup_expired_sessions() -> int:
             (datetime.utcnow().isoformat(),),
         )
         return cursor.rowcount
+
+
+# Pattern management functions (for complete parsing patterns)
+
+
+def create_pattern(
+    name: str,
+    pattern_type: str,
+    pattern: str,
+    user_id: str,
+    description: str | None = None,
+    test_sample: str | None = None,
+) -> dict:
+    """Create a new parsing pattern."""
+    pattern_id = str(uuid.uuid4())
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO patterns (id, name, type, pattern, description, test_sample, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (pattern_id, name, pattern_type, pattern, description, test_sample, user_id, now, now),
+        )
+    return get_pattern(pattern_id)
+
+
+def get_pattern(pattern_id: str) -> dict | None:
+    """Get a pattern by ID."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM patterns WHERE id = ?", (pattern_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_patterns() -> list[dict]:
+    """List all patterns."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM patterns ORDER BY name"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_pattern(
+    pattern_id: str,
+    name: str | None = None,
+    pattern: str | None = None,
+    description: str | None = None,
+    test_sample: str | None = None,
+) -> dict | None:
+    """Update a pattern."""
+    existing = get_pattern(pattern_id)
+    if not existing:
+        return None
+
+    updates = {"updated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")}
+    if name is not None:
+        updates["name"] = name
+    if pattern is not None:
+        updates["pattern"] = pattern
+    if description is not None:
+        updates["description"] = description
+    if test_sample is not None:
+        updates["test_sample"] = test_sample
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+    values = list(updates.values()) + [pattern_id]
+
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE patterns SET {set_clause} WHERE id = ?",
+            values,
+        )
+    return get_pattern(pattern_id)
+
+
+def delete_pattern(pattern_id: str) -> bool:
+    """Delete a pattern. Returns True if deleted."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM patterns WHERE id = ?", (pattern_id,)
+        )
+        return cursor.rowcount > 0
+
+
+# Grok pattern component functions (for reusable grok patterns like %{MYPATTERN})
+
+
+def create_grok_pattern(
+    name: str,
+    regex: str,
+    user_id: str,
+    description: str | None = None,
+) -> dict:
+    """Create a new reusable grok pattern component."""
+    pattern_id = str(uuid.uuid4())
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO grok_patterns (id, name, regex, description, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (pattern_id, name, regex, description, user_id, now, now),
+        )
+    return get_grok_pattern(pattern_id)
+
+
+def get_grok_pattern(pattern_id: str) -> dict | None:
+    """Get a grok pattern by ID."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM grok_patterns WHERE id = ?", (pattern_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_grok_pattern_by_name(name: str) -> dict | None:
+    """Get a grok pattern by name."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM grok_patterns WHERE name = ?", (name,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_grok_patterns() -> list[dict]:
+    """List all custom grok patterns."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM grok_patterns ORDER BY name"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_grok_patterns_dict() -> dict[str, str]:
+    """Get all custom grok patterns as a name->regex dict."""
+    patterns = list_grok_patterns()
+    return {p["name"]: p["regex"] for p in patterns}
+
+
+def update_grok_pattern(
+    pattern_id: str,
+    name: str | None = None,
+    regex: str | None = None,
+    description: str | None = None,
+) -> dict | None:
+    """Update a grok pattern."""
+    existing = get_grok_pattern(pattern_id)
+    if not existing:
+        return None
+
+    updates = {"updated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")}
+    if name is not None:
+        updates["name"] = name
+    if regex is not None:
+        updates["regex"] = regex
+    if description is not None:
+        updates["description"] = description
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+    values = list(updates.values()) + [pattern_id]
+
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE grok_patterns SET {set_clause} WHERE id = ?",
+            values,
+        )
+    return get_grok_pattern(pattern_id)
+
+
+def delete_grok_pattern(pattern_id: str) -> bool:
+    """Delete a grok pattern. Returns True if deleted."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM grok_patterns WHERE id = ?", (pattern_id,)
+        )
+        return cursor.rowcount > 0
