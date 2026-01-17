@@ -1,6 +1,7 @@
 .worktrees/
 .venv/
 docs/plans/
+docs/internal_docs/
 
 # Environment files
 .env
