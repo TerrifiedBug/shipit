@@ -34,7 +34,9 @@ ShipIt is designed for controlled self-service, with guardrails to prevent accid
 - **API Key Scoping**: Programmatic access via API keys inherits the creating user's permissions, supports expiration dates, and is tracked in audit logs.
 - **File Size Limits**: Configurable maximum upload size (default: 500MB) to prevent resource exhaustion.
 - **SSL Verification**: SSL certificate verification is enabled by default for OpenSearch connections.
-- **Session Security**: HTTP-only cookies with configurable session duration.
+- **Session Security**: HTTP-only cookies with secure flag (HTTPS), configurable session duration.
+- **Login Protection**: Rate limiting per IP and automatic account lockout after failed attempts.
+- **Password Policy**: Configurable complexity requirements (length, uppercase, lowercase, digits, special characters).
 
 ## Features
 
@@ -136,6 +138,14 @@ docker run -p 80:80 --env-file .env shipit
 | `MAX_FILE_SIZE_MB` | `500` | Maximum upload file size in MB |
 | `MAX_FIELDS_PER_DOCUMENT` | `1000` | Maximum fields per document to prevent mapping explosion (0 to disable) |
 | `UPLOAD_RATE_LIMIT_PER_MINUTE` | `10` | Maximum uploads per minute per user (0 to disable) |
+| `LOGIN_RATE_LIMIT_PER_MINUTE` | `5` | Maximum login attempts per IP per minute |
+| `ACCOUNT_LOCKOUT_ATTEMPTS` | `5` | Failed login attempts before account lockout |
+| `ACCOUNT_LOCKOUT_MINUTES` | `15` | Duration of account lockout |
+| `PASSWORD_MIN_LENGTH` | `8` | Minimum password length |
+| `PASSWORD_REQUIRE_UPPERCASE` | `true` | Require uppercase letter in password |
+| `PASSWORD_REQUIRE_LOWERCASE` | `true` | Require lowercase letter in password |
+| `PASSWORD_REQUIRE_DIGIT` | `true` | Require digit in password |
+| `PASSWORD_REQUIRE_SPECIAL` | `false` | Require special character in password |
 | `SESSION_DURATION_HOURS` | `8` | How long user sessions remain valid |
 | `APP_URL` | - | Public URL for CORS and OIDC callbacks (e.g., `https://shipit.example.com`) |
 | `FAILURE_FILE_RETENTION_HOURS` | `24` | How long to keep failed record files |
