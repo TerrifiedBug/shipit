@@ -102,6 +102,7 @@ export interface ApiKey {
   expires_at: string;
   created_at: string;
   last_used: string | null;
+  allowed_ips: string | null;
 }
 
 export interface CreateKeyResponse extends ApiKey {
@@ -116,12 +117,20 @@ export async function listApiKeys(): Promise<ApiKey[]> {
   return response.json();
 }
 
-export async function createApiKey(name: string, expiresInDays: number): Promise<CreateKeyResponse> {
+export async function createApiKey(
+  name: string,
+  expiresInDays: number,
+  allowedIps?: string
+): Promise<CreateKeyResponse> {
   const response = await fetch(`${API_BASE}/api/keys`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ name, expires_in_days: expiresInDays }),
+    body: JSON.stringify({
+      name,
+      expires_in_days: expiresInDays,
+      allowed_ips: allowedIps || null,
+    }),
   });
   if (!response.ok) throw new Error('Failed to create API key');
   return response.json();

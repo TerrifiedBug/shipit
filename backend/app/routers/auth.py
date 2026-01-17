@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 from datetime import datetime
 
@@ -79,6 +80,54 @@ def _get_client_ip(request: Request | None) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _is_ip_allowed(client_ip: str, allowed_ips: str | None) -> bool:
+    """Check if client IP is allowed by the allowlist.
+
+    Args:
+        client_ip: The client's IP address
+        allowed_ips: Comma-separated IPs/CIDRs (e.g., "10.0.0.0/24, 192.168.1.5")
+                    None or empty string means all IPs are allowed
+
+    Returns:
+        True if IP is allowed, False otherwise
+    """
+    # Empty or None means allow all
+    if not allowed_ips or not allowed_ips.strip():
+        return True
+
+    # Handle special case of "unknown" IP
+    if client_ip == "unknown":
+        return False
+
+    try:
+        client_addr = ipaddress.ip_address(client_ip)
+    except ValueError:
+        # Invalid client IP - reject
+        return False
+
+    # Check each allowed IP/CIDR
+    for entry in allowed_ips.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+
+        try:
+            # Try as network (CIDR notation)
+            if "/" in entry:
+                network = ipaddress.ip_network(entry, strict=False)
+                if client_addr in network:
+                    return True
+            else:
+                # Try as single IP
+                if client_addr == ipaddress.ip_address(entry):
+                    return True
+        except ValueError:
+            # Invalid entry in allowlist - skip it
+            continue
+
+    return False
+
+
 class SetupRequest(BaseModel):
     email: EmailStr
     password: str
@@ -140,6 +189,9 @@ def get_auth_context(request: Request) -> dict | None:
     - user: the authenticated user dict
     - auth_method: "session" | "api_key"
     - api_key_name: name of the API key (if auth_method is "api_key")
+
+    Raises:
+        HTTPException: 403 if API key IP restriction is violated
     """
     # Check for API key first
     auth_header = request.headers.get("Authorization")
@@ -152,6 +204,15 @@ def get_auth_context(request: Request) -> dict | None:
                 # Check expiry
                 expires_at = datetime.fromisoformat(api_key["expires_at"])
                 if expires_at > datetime.utcnow():
+                    # Check IP allowlist
+                    allowed_ips = api_key.get("allowed_ips")
+                    if allowed_ips:
+                        client_ip = _get_client_ip(request)
+                        if not _is_ip_allowed(client_ip, allowed_ips):
+                            raise HTTPException(
+                                status_code=403,
+                                detail="API key not authorized for this IP address"
+                            )
                     update_api_key_last_used(api_key["id"])
                     user = get_user_by_id(api_key["user_id"])
                     # Check if user is deleted or deactivated

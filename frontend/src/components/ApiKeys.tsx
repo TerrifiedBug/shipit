@@ -12,13 +12,14 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
   const [creating, setCreating] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [expiresInDays, setExpiresInDays] = useState(90);
+  const [allowedIps, setAllowedIps] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<CreateKeyResponse | null>(null);
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
   const { addToast } = useToast();
 
   // Check if form has unsaved changes
-  const isDirty = showCreateForm && newKeyName.trim().length > 0;
+  const isDirty = showCreateForm && (newKeyName.trim().length > 0 || allowedIps.trim().length > 0);
 
   // Wrap onClose with dirty state confirmation
   const handleClose = useCallback(() => {
@@ -62,10 +63,11 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
     setCreating(true);
 
     try {
-      const newKey = await createApiKey(newKeyName, expiresInDays);
+      const newKey = await createApiKey(newKeyName, expiresInDays, allowedIps || undefined);
       setNewlyCreatedKey(newKey);
       setKeys([newKey, ...keys]);
       setNewKeyName('');
+      setAllowedIps('');
       setShowCreateForm(false);
       addToast('API key created successfully', 'success');
     } catch (err) {
@@ -208,6 +210,21 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
                     <option value={365}>1 year</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Allowed IPs (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={allowedIps}
+                    onChange={(e) => setAllowedIps(e.target.value)}
+                    placeholder="e.g., 10.0.0.0/24, 192.168.1.5"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Leave empty to allow from any IP. Comma-separated IPs or CIDRs.
+                  </p>
+                </div>
               </div>
               <div className="flex justify-end gap-2 mt-4">
                 <button
@@ -294,6 +311,16 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
                       {key.last_used && (
                         <p className="text-sm text-gray-500 dark:text-gray-400">
                           Last used: {formatDate(key.last_used)}
+                        </p>
+                      )}
+                      {key.allowed_ips && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                          <span className="inline-flex items-center gap-1">
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            IP restricted: {key.allowed_ips}
+                          </span>
                         </p>
                       )}
                     </div>

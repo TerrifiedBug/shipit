@@ -106,6 +106,11 @@ def _init_api_keys_table(conn: sqlite3.Connection) -> None:
             last_used TIMESTAMP
         )
     """)
+    # Migration: add allowed_ips column if it doesn't exist
+    try:
+        conn.execute("ALTER TABLE api_keys ADD COLUMN allowed_ips TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
 
 def _init_audit_log_table(conn: sqlite3.Connection) -> None:
@@ -620,17 +625,26 @@ def create_api_key(
     name: str,
     key_hash: str,
     expires_in_days: int,
+    allowed_ips: str | None = None,
 ) -> dict:
-    """Create a new API key."""
+    """Create a new API key.
+
+    Args:
+        user_id: The user ID who owns this key
+        name: Human-readable name for the key
+        key_hash: SHA-256 hash of the raw API key
+        expires_in_days: Number of days until expiration
+        allowed_ips: Optional comma-separated IPs/CIDRs (e.g., "10.0.0.0/24, 192.168.1.5")
+    """
     key_id = str(uuid.uuid4())
     expires_at = (datetime.utcnow() + timedelta(days=expires_in_days)).isoformat()
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO api_keys (id, user_id, name, key_hash, expires_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO api_keys (id, user_id, name, key_hash, expires_at, allowed_ips)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (key_id, user_id, name, key_hash, expires_at),
+            (key_id, user_id, name, key_hash, expires_at, allowed_ips),
         )
     return get_api_key_by_id(key_id)
 
