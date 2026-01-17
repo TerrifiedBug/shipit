@@ -29,18 +29,31 @@ def _get_client_ip(request: Request | None) -> str:
 class CreateKeyRequest(BaseModel):
     name: str
     expires_in_days: int
+    allowed_ips: str | None = None  # Comma-separated IPs/CIDRs
 
 
 @router.post("")
 def create_key(request: CreateKeyRequest, http_request: Request = None, user: dict = Depends(require_auth)):
-    """Create a new API key. The key is only shown once."""
+    """Create a new API key. The key is only shown once.
+
+    Args:
+        name: Human-readable name for the key
+        expires_in_days: Number of days until expiration
+        allowed_ips: Optional comma-separated IPs/CIDRs (e.g., "10.0.0.0/24, 192.168.1.5")
+    """
     raw_key, key_hash = generate_api_key()
+
+    # Normalize allowed_ips: strip whitespace, convert empty string to None
+    allowed_ips = request.allowed_ips.strip() if request.allowed_ips else None
+    if allowed_ips == "":
+        allowed_ips = None
 
     api_key = create_api_key(
         user_id=user["id"],
         name=request.name,
         key_hash=key_hash,
         expires_in_days=request.expires_in_days,
+        allowed_ips=allowed_ips,
     )
 
     audit.log_api_key_created(
@@ -59,6 +72,7 @@ def create_key(request: CreateKeyRequest, http_request: Request = None, user: di
         "key": raw_key,
         "expires_at": api_key["expires_at"],
         "created_at": api_key["created_at"],
+        "allowed_ips": api_key.get("allowed_ips"),
     }
 
 
@@ -74,6 +88,7 @@ def list_keys(user: dict = Depends(require_auth)):
             "expires_at": k["expires_at"],
             "created_at": k["created_at"],
             "last_used": k["last_used"],
+            "allowed_ips": k.get("allowed_ips"),
         }
         for k in keys
     ]

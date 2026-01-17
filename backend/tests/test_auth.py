@@ -534,3 +534,116 @@ class TestAuthMiddleware:
         # Access protected endpoint
         response = client.get("/api/history", cookies=login_response.cookies)
         assert response.status_code == 200
+
+
+class TestApiKeyIpAllowlisting:
+    """Tests for API key IP allowlisting feature."""
+
+    def _setup_and_login(self, db):
+        """Helper to setup user and return cookies."""
+        client.post("/api/auth/setup", json={
+            "email": "iptest@example.com",
+            "password": "Password123",
+            "name": "IP Test User",
+        })
+        response = client.post("/api/auth/login", json={
+            "email": "iptest@example.com",
+            "password": "Password123",
+        })
+        return response.cookies
+
+    def test_create_api_key_with_allowed_ips(self, db):
+        """Test creating an API key with IP allowlist."""
+        cookies = self._setup_and_login(db)
+        response = client.post("/api/keys", json={
+            "name": "IP Restricted Key",
+            "expires_in_days": 30,
+            "allowed_ips": "10.0.0.0/24, 192.168.1.5",
+        }, cookies=cookies)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "IP Restricted Key"
+        assert data["allowed_ips"] == "10.0.0.0/24, 192.168.1.5"
+
+    def test_create_api_key_without_allowed_ips(self, db):
+        """Test creating an API key without IP restriction (default)."""
+        cookies = self._setup_and_login(db)
+        response = client.post("/api/keys", json={
+            "name": "Unrestricted Key",
+            "expires_in_days": 30,
+        }, cookies=cookies)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["allowed_ips"] is None
+
+    def test_list_api_keys_includes_allowed_ips(self, db):
+        """Test that list keys response includes allowed_ips field."""
+        cookies = self._setup_and_login(db)
+        # Create a key with IP restriction
+        client.post("/api/keys", json={
+            "name": "Listed Key",
+            "expires_in_days": 30,
+            "allowed_ips": "192.168.0.0/16",
+        }, cookies=cookies)
+        # List keys
+        response = client.get("/api/keys", cookies=cookies)
+        assert response.status_code == 200
+        keys = response.json()
+        assert len(keys) >= 1
+        # Find our key
+        listed_key = next((k for k in keys if k["name"] == "Listed Key"), None)
+        assert listed_key is not None
+        assert listed_key["allowed_ips"] == "192.168.0.0/16"
+
+
+class TestIpAllowlistValidation:
+    """Unit tests for IP allowlist validation logic."""
+
+    def test_is_ip_allowed_empty_allowlist(self):
+        """Empty or None allowlist should allow all IPs."""
+        from app.routers.auth import _is_ip_allowed
+
+        assert _is_ip_allowed("192.168.1.1", None) is True
+        assert _is_ip_allowed("192.168.1.1", "") is True
+        assert _is_ip_allowed("192.168.1.1", "   ") is True
+
+    def test_is_ip_allowed_single_ip_match(self):
+        """Single IP in allowlist should match exactly."""
+        from app.routers.auth import _is_ip_allowed
+
+        assert _is_ip_allowed("192.168.1.5", "192.168.1.5") is True
+        assert _is_ip_allowed("192.168.1.6", "192.168.1.5") is False
+
+    def test_is_ip_allowed_cidr_match(self):
+        """CIDR notation should match IPs in range."""
+        from app.routers.auth import _is_ip_allowed
+
+        assert _is_ip_allowed("10.0.0.1", "10.0.0.0/24") is True
+        assert _is_ip_allowed("10.0.0.255", "10.0.0.0/24") is True
+        assert _is_ip_allowed("10.0.1.1", "10.0.0.0/24") is False
+
+    def test_is_ip_allowed_multiple_entries(self):
+        """Multiple entries separated by comma should all be checked."""
+        from app.routers.auth import _is_ip_allowed
+
+        allowlist = "10.0.0.0/24, 192.168.1.5, 172.16.0.0/16"
+        assert _is_ip_allowed("10.0.0.50", allowlist) is True
+        assert _is_ip_allowed("192.168.1.5", allowlist) is True
+        assert _is_ip_allowed("172.16.100.200", allowlist) is True
+        assert _is_ip_allowed("8.8.8.8", allowlist) is False
+
+    def test_is_ip_allowed_invalid_client_ip(self):
+        """Invalid client IP should be rejected."""
+        from app.routers.auth import _is_ip_allowed
+
+        assert _is_ip_allowed("invalid", "192.168.1.0/24") is False
+        assert _is_ip_allowed("unknown", "192.168.1.0/24") is False
+
+    def test_is_ip_allowed_invalid_allowlist_entry(self):
+        """Invalid entries in allowlist should be skipped."""
+        from app.routers.auth import _is_ip_allowed
+
+        # First entry is invalid, second is valid
+        assert _is_ip_allowed("192.168.1.5", "invalid, 192.168.1.5") is True
+        # All entries invalid, nothing matches
+        assert _is_ip_allowed("192.168.1.5", "invalid, also-invalid") is False
