@@ -913,7 +913,8 @@ def get_failed_login_count(user_id: str, minutes: int) -> int:
     Returns:
         The number of failed login attempts within the time window.
     """
-    cutoff = (datetime.utcnow() - timedelta(minutes=minutes)).isoformat()
+    # Use strftime format to match SQLite's CURRENT_TIMESTAMP format (space separator, not 'T')
+    cutoff = (datetime.utcnow() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
     with get_connection() as conn:
         row = conn.execute(
             "SELECT COUNT(*) FROM failed_logins WHERE user_id = ? AND attempted_at > ?",
