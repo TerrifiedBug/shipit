@@ -103,7 +103,7 @@ class PatternTestResponse(BaseModel):
 
 
 # =============================================================================
-# Custom Patterns Endpoints
+# Custom Patterns Endpoints (non-parameterized routes first)
 # =============================================================================
 
 
@@ -146,71 +146,6 @@ async def create_pattern(
     return PatternResponse(**pattern)
 
 
-@router.get("/{pattern_id}")
-async def get_pattern(
-    pattern_id: str,
-    user: dict = Depends(require_auth),
-) -> PatternResponse:
-    """Get a specific custom pattern."""
-    pattern = database.get_pattern(pattern_id)
-    if not pattern:
-        raise HTTPException(status_code=404, detail="Pattern not found")
-
-    return PatternResponse(**pattern)
-
-
-@router.put("/{pattern_id}")
-async def update_pattern(
-    pattern_id: str,
-    data: PatternUpdate,
-    user: dict = Depends(require_auth),
-) -> PatternResponse:
-    """Update a custom pattern."""
-    existing = database.get_pattern(pattern_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Pattern not found")
-
-    # Validate the pattern if being updated
-    pattern_type = data.type if data.type else existing["type"]
-    pattern_str = data.pattern if data.pattern else existing["pattern"]
-
-    if data.pattern:
-        if pattern_type == "grok":
-            is_valid, error = validate_grok_pattern(pattern_str)
-        else:
-            is_valid, error = validate_regex_pattern(pattern_str)
-
-        if not is_valid:
-            raise HTTPException(status_code=400, detail=f"Invalid pattern: {error}")
-
-    updated = database.update_pattern(
-        pattern_id=pattern_id,
-        name=data.name,
-        type=data.type,
-        pattern=data.pattern,
-        description=data.description,
-        test_sample=data.test_sample,
-    )
-
-    if not updated:
-        raise HTTPException(status_code=500, detail="Failed to update pattern")
-
-    return PatternResponse(**updated)
-
-
-@router.delete("/{pattern_id}", status_code=204)
-async def delete_pattern(
-    pattern_id: str,
-    user: dict = Depends(require_auth),
-) -> None:
-    """Delete a custom pattern."""
-    existing = database.get_pattern(pattern_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Pattern not found")
-
-    database.delete_pattern(pattern_id)
-
-
 @router.post("/test")
 async def test_pattern(
     data: PatternTestRequest,
@@ -246,7 +181,7 @@ async def test_pattern(
 
 
 # =============================================================================
-# Grok Pattern Components Endpoints
+# Grok Pattern Components Endpoints (must come before /{pattern_id} routes)
 # =============================================================================
 
 
@@ -361,3 +296,73 @@ async def delete_grok_pattern(
         raise HTTPException(status_code=404, detail="Grok pattern not found")
 
     database.delete_grok_pattern(pattern_id)
+
+
+# =============================================================================
+# Parameterized Pattern Routes (must come LAST to avoid catching /test, /grok)
+# =============================================================================
+
+
+@router.get("/{pattern_id}")
+async def get_pattern(
+    pattern_id: str,
+    user: dict = Depends(require_auth),
+) -> PatternResponse:
+    """Get a specific custom pattern."""
+    pattern = database.get_pattern(pattern_id)
+    if not pattern:
+        raise HTTPException(status_code=404, detail="Pattern not found")
+
+    return PatternResponse(**pattern)
+
+
+@router.put("/{pattern_id}")
+async def update_pattern(
+    pattern_id: str,
+    data: PatternUpdate,
+    user: dict = Depends(require_auth),
+) -> PatternResponse:
+    """Update a custom pattern."""
+    existing = database.get_pattern(pattern_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Pattern not found")
+
+    # Validate the pattern if being updated
+    pattern_type = data.type if data.type else existing["type"]
+    pattern_str = data.pattern if data.pattern else existing["pattern"]
+
+    if data.pattern:
+        if pattern_type == "grok":
+            is_valid, error = validate_grok_pattern(pattern_str)
+        else:
+            is_valid, error = validate_regex_pattern(pattern_str)
+
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=f"Invalid pattern: {error}")
+
+    updated = database.update_pattern(
+        pattern_id=pattern_id,
+        name=data.name,
+        type=data.type,
+        pattern=data.pattern,
+        description=data.description,
+        test_sample=data.test_sample,
+    )
+
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update pattern")
+
+    return PatternResponse(**updated)
+
+
+@router.delete("/{pattern_id}", status_code=204)
+async def delete_pattern(
+    pattern_id: str,
+    user: dict = Depends(require_auth),
+) -> None:
+    """Delete a custom pattern."""
+    existing = database.get_pattern(pattern_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Pattern not found")
+
+    database.delete_pattern(pattern_id)

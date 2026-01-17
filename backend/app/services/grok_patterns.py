@@ -26,6 +26,18 @@ class RegexTimeoutError(Exception):
     pass
 
 
+def _normalize_pattern(regex: str) -> str:
+    """Convert PCRE-style named groups to Python-style.
+
+    Converts (?<name>...) to (?P<name>...) for Python compatibility.
+    """
+    # Convert (?<name>...) to (?P<name>...)
+    normalized = re.sub(r'\(\?<([a-zA-Z_][a-zA-Z0-9_]*)>', r'(?P<\1>', regex)
+    # Convert (?'name'...) to (?P<name>...)
+    normalized = re.sub(r"\(\?'([a-zA-Z_][a-zA-Z0-9_]*)'", r'(?P<\1>', normalized)
+    return normalized
+
+
 def _match_with_timeout_thread(
     pattern: str | re.Pattern,
     text: str,
@@ -34,8 +46,14 @@ def _match_with_timeout_thread(
     """Execute regex match with timeout using a thread pool.
 
     This is a cross-platform solution that works on all systems.
+    Automatically converts PCRE-style named groups to Python-style.
     """
-    compiled = pattern if isinstance(pattern, re.Pattern) else re.compile(pattern)
+    if isinstance(pattern, re.Pattern):
+        compiled = pattern
+    else:
+        # Normalize PCRE-style named groups to Python-style
+        normalized = _normalize_pattern(pattern)
+        compiled = re.compile(normalized)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(compiled.match, text)
@@ -258,6 +276,8 @@ def validate_grok_pattern(pattern: str) -> tuple[bool, str | None]:
 def validate_regex_pattern(regex: str) -> tuple[bool, str | None]:
     """Validate a raw regex pattern string.
 
+    Automatically converts PCRE-style named groups (?<name>...) to Python-style.
+
     Args:
         regex: Regex pattern to validate
 
@@ -265,9 +285,18 @@ def validate_regex_pattern(regex: str) -> tuple[bool, str | None]:
         (is_valid, error_message) - True if valid, or False with error message
     """
     try:
-        re.compile(regex)
+        # Normalize the pattern first (convert PCRE to Python syntax)
+        normalized = _normalize_pattern(regex)
+        re.compile(normalized)
         return True, None
     except re.error as e:
+        error_msg = str(e)
+        # Provide more helpful error message for common issues
+        if "unknown extension ?<" in error_msg or "unknown extension ?'" in error_msg:
+            return False, (
+                "Invalid named group syntax. Python uses (?P<name>...) not (?<name>...). "
+                "Your pattern should be auto-converted, but if not, try using (?P<name>...) syntax."
+            )
         return False, f"Invalid regex: {e}"
 
 

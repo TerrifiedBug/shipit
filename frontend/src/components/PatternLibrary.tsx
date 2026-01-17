@@ -110,7 +110,12 @@ export function PatternLibrary({ onClose }: PatternLibraryProps) {
   );
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
@@ -538,6 +543,19 @@ function GrokPatternModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Track if form has unsaved changes
+  const isDirty =
+    name !== (pattern?.name || '') ||
+    regex !== (pattern?.regex || '') ||
+    description !== (pattern?.description || '');
+
+  const handleClose = () => {
+    if (isDirty && !confirm('You have unsaved changes. Are you sure you want to close?')) {
+      return;
+    }
+    onClose();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -552,7 +570,12 @@ function GrokPatternModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleClose();
+      }}
+    >
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           {pattern ? 'Edit Grok Pattern' : 'Add Grok Pattern'}
@@ -613,7 +636,7 @@ function GrokPatternModal({
           <div className="flex justify-end gap-3 pt-4">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={saving}
               className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
             >
@@ -652,6 +675,21 @@ function PatternModal({
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<PatternTestResponse | null>(null);
   const { addToast } = useToast();
+
+  // Track if form has unsaved changes
+  const isDirty =
+    name !== (pattern?.name || '') ||
+    type !== (pattern?.type || 'grok') ||
+    patternStr !== (pattern?.pattern || '') ||
+    description !== (pattern?.description || '') ||
+    testSample !== (pattern?.test_sample || '');
+
+  const handleClose = () => {
+    if (isDirty && !confirm('You have unsaved changes. Are you sure you want to close?')) {
+      return;
+    }
+    onClose();
+  };
 
   const handleTest = async () => {
     if (!patternStr || !testSample) {
@@ -695,7 +733,12 @@ function PatternModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleClose();
+      }}
+    >
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[90vh] overflow-auto">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           {pattern ? 'Edit Pattern' : 'Add Pattern'}
@@ -750,9 +793,13 @@ function PatternModal({
               rows={3}
               className="w-full px-3 py-2 font-mono text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
-            {type === 'grok' && (
+            {type === 'grok' ? (
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 Use %{'{PATTERN:field}'} syntax. See Built-in Grok tab for available patterns.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Python regex syntax. Named groups: {'(?P<name>...)'}. PCRE syntax {'(?<name>...)'} is auto-converted.
               </p>
             )}
           </div>
@@ -825,7 +872,7 @@ function PatternModal({
           <div className="flex justify-end gap-3 pt-4">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={saving}
               className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
             >
