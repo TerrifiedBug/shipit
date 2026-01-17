@@ -126,13 +126,50 @@ def parse_timestamp(value: Any) -> str | None:
     return None
 
 
+def coerce_value(value: Any, target_type: str) -> Any:
+    """Coerce a value to the target type. Returns None on failure."""
+    if value is None or value == "":
+        return None
+
+    try:
+        if target_type == "integer":
+            if isinstance(value, bool):
+                return 1 if value else 0
+            return int(float(value))  # float() first handles "1.0" -> 1
+
+        elif target_type == "float":
+            return float(value)
+
+        elif target_type == "boolean":
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return value != 0
+            # String handling
+            lower = str(value).lower().strip()
+            if lower in ("true", "1", "yes", "on"):
+                return True
+            if lower in ("false", "0", "no", "off", ""):
+                return False
+            return None  # Unparseable
+
+        elif target_type == "string":
+            return str(value)
+
+        else:
+            return value  # Unknown type, keep as-is
+    except (ValueError, TypeError):
+        return None
+
+
 def apply_field_mappings(
     record: dict[str, Any],
     field_mappings: dict[str, str],
     excluded_fields: list[str],
     timestamp_field: str | None = None,
+    field_types: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Apply field mappings, exclusions, and timestamp processing to a record."""
+    """Apply field mappings, exclusions, type coercion, and timestamp processing to a record."""
     result = {}
 
     for key, value in record.items():
@@ -158,6 +195,14 @@ def apply_field_mappings(
                 mapped_name = field_mappings.get(timestamp_field, timestamp_field)
                 if mapped_name in result:
                     result[mapped_name] = parsed
+
+    # Apply type coercion (uses original field names as keys)
+    if field_types:
+        for original_name, target_type in field_types.items():
+            # Get the mapped name for this field
+            mapped_name = field_mappings.get(original_name, original_name)
+            if mapped_name in result:
+                result[mapped_name] = coerce_value(result[mapped_name], target_type)
 
     return result
 
@@ -341,6 +386,7 @@ def ingest_file(
     field_mappings: dict[str, str] | None = None,
     excluded_fields: list[str] | None = None,
     timestamp_field: str | None = None,
+    field_types: dict[str, str] | None = None,
     progress_callback: Callable[[int, int, int], None] | None = None,
     include_filename: bool = False,
     filename_field: str = "source_file",
@@ -355,6 +401,7 @@ def ingest_file(
         field_mappings: Optional dict mapping original field names to new names
         excluded_fields: Optional list of fields to exclude
         timestamp_field: Optional field to parse as timestamp and map to @timestamp
+        field_types: Optional dict mapping original field names to target types for coercion
         progress_callback: Optional callback(processed, success, failed) for progress updates
         include_filename: Whether to add source filename to each record
         filename_field: Name of the field to use for filename (default: _source_file)
@@ -377,9 +424,9 @@ def ingest_file(
         if include_filename:
             record[filename_field] = file_path.name
 
-        # Apply field mappings and timestamp processing
+        # Apply field mappings, timestamp processing, and type coercion
         mapped_record = apply_field_mappings(
-            record, field_mappings, excluded_fields, timestamp_field
+            record, field_mappings, excluded_fields, timestamp_field, field_types
         )
         batch.append(mapped_record)
 
