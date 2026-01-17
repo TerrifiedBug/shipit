@@ -44,6 +44,14 @@ def detect_format(file_path: Path) -> FileFormat:
         with open(safe_path, 'r', encoding='utf-8') as f:
             first_line = f.readline().strip()
 
+            # Check for NDJSON (starts with {)
+            if first_line.startswith('{'):
+                return "ndjson"
+
+            # Check for JSON array (starts with [)
+            if first_line.startswith('['):
+                return "json_array"
+
             # Check for syslog pattern (starts with <priority>)
             if first_line.startswith('<') and '>' in first_line[:5]:
                 return "syslog"
@@ -61,7 +69,12 @@ def detect_format(file_path: Path) -> FileFormat:
                 if ltsv_like >= len(pairs) * 0.7:  # 70% match threshold
                     return "ltsv"
 
-        return "csv"  # Default for .log if not syslog or ltsv
+            # Check for logfmt before defaulting to CSV
+            f.seek(0)
+            if _detect_logfmt(f):
+                return "logfmt"
+
+        return "csv"  # Default for .log if not detected as another format
 
     # Content-based detection (existing logic)
     with open(safe_path, "r", encoding="utf-8") as f:
@@ -357,13 +370,14 @@ def infer_fields(records: list[dict]) -> list[dict]:
         return []
 
     # Collect all unique field names preserving order from first record
-    field_names = list(records[0].keys())
+    # Filter out None and empty string keys (can occur with malformed CSV)
+    field_names = [k for k in records[0].keys() if k is not None and k != ""]
     seen = set(field_names)
 
     # Add any additional fields from other records
     for record in records[1:]:
         for key in record.keys():
-            if key not in seen:
+            if key is not None and key != "" and key not in seen:
                 field_names.append(key)
                 seen.add(key)
 
