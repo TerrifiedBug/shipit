@@ -249,6 +249,7 @@ export interface IngestRequest {
   timestamp_field?: string | null;
   field_mappings: Record<string, string>;
   excluded_fields: string[];
+  field_types?: Record<string, string>;
   include_filename?: boolean;
   filename_field?: string;
 }
