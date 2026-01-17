@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { deleteIndex, downloadFailures, getFailuresDownloadUrl, getHistory, UploadRecord } from '../api/client';
+import { deleteIndex, downloadFailures, getFailuresDownloadUrl, getAppSettings, getHistory, UploadRecord } from '../api/client';
 
 interface HistoryProps {
   onClose: () => void;
@@ -50,6 +50,7 @@ export function History({ onClose }: HistoryProps) {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; indexName: string } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [retentionDays, setRetentionDays] = useState<number>(0);
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
@@ -69,6 +70,12 @@ export function History({ onClose }: HistoryProps) {
   useEffect(() => {
     loadHistory();
   }, [statusFilter]);
+
+  useEffect(() => {
+    getAppSettings().then((settings) => {
+      setRetentionDays(settings.index_retention_days);
+    });
+  }, []);
 
   useEffect(() => {
     if (toast) {
@@ -134,6 +141,18 @@ export function History({ onClose }: HistoryProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-4">
+          {/* Retention Policy Notice */}
+          {retentionDays > 0 && (
+            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2">
+              <svg className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm text-blue-700 dark:text-blue-300">
+                Indices are automatically deleted after {retentionDays} days
+              </span>
+            </div>
+          )}
+
           {/* Status Filter */}
           <select
             value={statusFilter}

@@ -585,3 +585,18 @@ export async function getAuditEventTypes(): Promise<string[]> {
   const data = await response.json();
   return data.event_types;
 }
+
+// App settings
+export interface AppSettings {
+  index_retention_days: number;
+}
+
+export async function getAppSettings(): Promise<AppSettings> {
+  const response = await fetch(`${API_BASE}/api/settings`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    return { index_retention_days: 0 };
+  }
+  return response.json();
+}
