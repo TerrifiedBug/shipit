@@ -133,6 +133,65 @@ def require_auth(request: Request) -> dict:
     return user
 
 
+def get_auth_context(request: Request) -> dict | None:
+    """Get authentication context including method and API key info.
+
+    Returns a dict with:
+    - user: the authenticated user dict
+    - auth_method: "session" | "api_key"
+    - api_key_name: name of the API key (if auth_method is "api_key")
+    """
+    # Check for API key first
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        if token.startswith("shipit_"):
+            key_hash = hash_api_key(token)
+            api_key = get_api_key_by_hash(key_hash)
+            if api_key:
+                # Check expiry
+                expires_at = datetime.fromisoformat(api_key["expires_at"])
+                if expires_at > datetime.utcnow():
+                    update_api_key_last_used(api_key["id"])
+                    user = get_user_by_id(api_key["user_id"])
+                    # Check if user is deleted or deactivated
+                    if user and (user.get("deleted_at") or not user.get("is_active", True)):
+                        return None
+                    return {
+                        "user": user,
+                        "auth_method": "api_key",
+                        "api_key_name": api_key["name"],
+                    }
+            return None
+
+    # Fall back to session cookie
+    session_token = request.cookies.get("session")
+    if not session_token:
+        return None
+    payload = verify_session_token(session_token)
+    if not payload:
+        return None
+    user = get_user_by_id(payload["sub"])
+    # Check if user is deleted or deactivated
+    if user and (user.get("deleted_at") or not user.get("is_active", True)):
+        return None
+    if user:
+        return {
+            "user": user,
+            "auth_method": "session",
+            "api_key_name": None,
+        }
+    return None
+
+
+def require_auth_with_context(request: Request) -> dict:
+    """Dependency that requires authentication and returns auth context."""
+    context = get_auth_context(request)
+    if not context:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return context
+
+
 @router.get("/setup")
 def check_setup_needed():
     """Check if initial setup is required (no users exist)."""

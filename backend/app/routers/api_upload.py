@@ -2,14 +2,20 @@
 
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.config import settings
-from app.routers.auth import require_auth
-from app.services.database import track_index
+from app.routers.auth import require_auth_with_context
+from app.services.database import (
+    track_index,
+    create_upload,
+    start_ingestion,
+    complete_ingestion,
+)
 from app.services.ingestion import ingest_file
 from app.services.opensearch import validate_index_for_ingestion
 from app.services.parser import detect_format, parse_preview
@@ -23,13 +29,16 @@ async def api_upload(
     index_name: str = Form(...),
     format: Optional[str] = Form(None),
     timestamp_field: Optional[str] = Form(None),
-    user: dict = Depends(require_auth),
+    include_filename: Optional[bool] = Form(False),
+    filename_field: Optional[str] = Form("source_file"),
+    auth_context: dict = Depends(require_auth_with_context),
 ):
     """
     Single-shot API upload for programmatic file ingestion.
 
     This endpoint combines file upload and ingestion into a single call,
-    suitable for automation and API-based workflows.
+    suitable for automation and API-based workflows. Uploads are tracked
+    in the history page for audit purposes.
 
     Args:
         file: File to upload (JSON array, NDJSON, CSV, TSV, LTSV, or syslog)
@@ -37,6 +46,8 @@ async def api_upload(
         format: Optional format override (json_array, ndjson, csv, tsv, ltsv, syslog).
                 If not specified, format is auto-detected.
         timestamp_field: Optional field to use as @timestamp. Must exist in the data.
+        include_filename: If true, add source filename to each record.
+        filename_field: Name of the field to store filename (default: source_file).
 
     Returns:
         {
@@ -45,6 +56,7 @@ async def api_upload(
             "records_ingested": int,
             "records_failed": int,
             "duration_seconds": float,
+            "upload_id": str,  # ID for tracking in history
             "errors": [...]  # present if records_failed > 0
         }
 
@@ -53,6 +65,10 @@ async def api_upload(
         401: Authentication required
     """
     start_time = time.time()
+    user = auth_context["user"]
+    upload_id = str(uuid.uuid4())
+    filename = file.filename or "uploaded_file"
+    file_size = 0
 
     # Build full index name with prefix
     full_index_name = f"{settings.index_prefix}{index_name}"
@@ -70,6 +86,7 @@ async def api_upload(
         tmp.write(content)
         tmp.flush()
         temp_path = Path(tmp.name)
+        file_size = len(content)
 
     try:
         # Detect or use specified format
@@ -78,10 +95,22 @@ async def api_upload(
         else:
             file_format = detect_format(temp_path)
 
+        # Create upload history record (for tracking in History page)
+        create_upload(
+            upload_id=upload_id,
+            filenames=[filename],
+            file_sizes=[file_size],
+            file_format=file_format,
+            user_id=user["id"],
+            upload_method="api",
+            api_key_name=auth_context.get("api_key_name"),
+        )
+
         # Validate timestamp field if specified
         if timestamp_field:
             preview = parse_preview(temp_path, file_format, limit=10)
             if not preview:
+                complete_ingestion(upload_id, 0, 0, "File appears to be empty or unparseable")
                 raise HTTPException(
                     status_code=400,
                     detail="File appears to be empty or unparseable",
@@ -90,6 +119,7 @@ async def api_upload(
 
             available_fields = list(preview[0].keys())
             if timestamp_field not in available_fields:
+                complete_ingestion(upload_id, 0, 0, f"Timestamp field '{timestamp_field}' not found")
                 raise HTTPException(
                     status_code=400,
                     detail={
@@ -98,17 +128,41 @@ async def api_upload(
                     },
                 )
 
+        # Build field mappings for filename inclusion
+        field_mappings = {}
+        if include_filename and filename_field:
+            # This is handled by ingest_file via include_filename parameter
+            pass
+
+        # Start ingestion tracking
+        start_ingestion(
+            upload_id=upload_id,
+            index_name=full_index_name,
+            timestamp_field=timestamp_field,
+            field_mappings={},
+            excluded_fields=[],
+            total_records=0,  # Unknown until ingestion starts
+        )
+
         # Perform ingestion
         result = ingest_file(
             file_path=temp_path,
             file_format=file_format,
             index_name=full_index_name,
             timestamp_field=timestamp_field,
+            include_filename=include_filename,
+            filename_field=filename_field if include_filename else None,
         )
 
         # Track index if it's new
         if index_meta.get("requires_tracking"):
             track_index(full_index_name, user_id=user["id"])
+
+        # Complete ingestion tracking
+        error_message = None
+        if result.failed > 0:
+            error_message = f"{result.failed} records failed to ingest"
+        complete_ingestion(upload_id, result.success, result.failed, error_message)
 
         # Build response
         duration = time.time() - start_time
@@ -119,6 +173,7 @@ async def api_upload(
             "records_ingested": result.success,
             "records_failed": result.failed,
             "duration_seconds": round(duration, 2),
+            "upload_id": upload_id,
         }
 
         if result.failed > 0:
@@ -130,6 +185,8 @@ async def api_upload(
     except HTTPException:
         raise
     except Exception as e:
+        # Record failure in history
+        complete_ingestion(upload_id, 0, 0, str(e))
         raise HTTPException(
             status_code=400,
             detail=f"Failed to process file: {str(e)}",

@@ -35,7 +35,7 @@ class TestApiUpload:
     @patch("app.routers.api_upload.validate_index_for_ingestion")
     @patch("app.routers.api_upload.ingest_file")
     @patch("app.routers.api_upload.detect_format")
-    def test_api_upload_success(self, mock_detect, mock_ingest, mock_validate, mock_track, db):
+    def test_api_upload_success(self, mock_detect, mock_ingest, mock_validate, mock_track, db, temp_dir):
         """Test successful API upload."""
         api_key = self._create_user_with_api_key(db)
 
@@ -69,7 +69,7 @@ class TestApiUpload:
     @patch("app.routers.api_upload.ingest_file")
     @patch("app.routers.api_upload.detect_format")
     @patch("app.routers.api_upload.parse_preview")
-    def test_api_upload_with_timestamp_field(self, mock_preview, mock_detect, mock_ingest, mock_validate, mock_track, db):
+    def test_api_upload_with_timestamp_field(self, mock_preview, mock_detect, mock_ingest, mock_validate, mock_track, db, temp_dir):
         """Test API upload with timestamp field specified."""
         api_key = self._create_user_with_api_key(db)
 
@@ -102,7 +102,7 @@ class TestApiUpload:
     @patch("app.routers.api_upload.validate_index_for_ingestion")
     @patch("app.routers.api_upload.detect_format")
     @patch("app.routers.api_upload.parse_preview")
-    def test_api_upload_invalid_timestamp_field(self, mock_preview, mock_detect, mock_validate, db):
+    def test_api_upload_invalid_timestamp_field(self, mock_preview, mock_detect, mock_validate, db, temp_dir):
         """Test API upload with non-existent timestamp field."""
         api_key = self._create_user_with_api_key(db)
 
@@ -146,7 +146,7 @@ class TestApiUpload:
     @patch("app.routers.api_upload.track_index")
     @patch("app.routers.api_upload.validate_index_for_ingestion")
     @patch("app.routers.api_upload.ingest_file")
-    def test_api_upload_with_format_override(self, mock_ingest, mock_validate, mock_track, db):
+    def test_api_upload_with_format_override(self, mock_ingest, mock_validate, mock_track, db, temp_dir):
         """Test API upload with explicit format override."""
         api_key = self._create_user_with_api_key(db)
 
@@ -179,7 +179,7 @@ class TestApiUpload:
     @patch("app.routers.api_upload.validate_index_for_ingestion")
     @patch("app.routers.api_upload.ingest_file")
     @patch("app.routers.api_upload.detect_format")
-    def test_api_upload_with_errors(self, mock_detect, mock_ingest, mock_validate, mock_track, db):
+    def test_api_upload_with_errors(self, mock_detect, mock_ingest, mock_validate, mock_track, db, temp_dir):
         """Test API upload with some failed records."""
         api_key = self._create_user_with_api_key(db)
 

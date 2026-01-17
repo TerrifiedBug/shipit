@@ -371,3 +371,70 @@ class TestIndexTracking:
 
         # Should not raise exception
         untrack_index("nonexistent-index")
+
+
+class TestApiUploadTracking:
+    """Tests for API upload tracking in history."""
+
+    def test_create_upload_with_api_method(self, temp_db):
+        """create_upload should store upload_method when provided."""
+        upload = db.create_upload(
+            upload_id="api-upload-1",
+            filenames=["test.json"],
+            file_sizes=[1024],
+            file_format="json_array",
+            upload_method="api",
+        )
+
+        assert upload["id"] == "api-upload-1"
+        assert upload["upload_method"] == "api"
+
+    def test_create_upload_with_api_key_name(self, temp_db):
+        """create_upload should store api_key_name when provided."""
+        upload = db.create_upload(
+            upload_id="api-upload-2",
+            filenames=["test.json"],
+            file_sizes=[1024],
+            file_format="json_array",
+            upload_method="api",
+            api_key_name="my-automation-key",
+        )
+
+        assert upload["id"] == "api-upload-2"
+        assert upload["upload_method"] == "api"
+        assert upload["api_key_name"] == "my-automation-key"
+
+    def test_create_upload_defaults_to_web_method(self, temp_db):
+        """create_upload should default to 'web' upload method."""
+        upload = db.create_upload(
+            upload_id="web-upload-1",
+            filenames=["test.json"],
+            file_sizes=[1024],
+            file_format="json_array",
+        )
+
+        assert upload["id"] == "web-upload-1"
+        assert upload["upload_method"] == "web"
+        assert upload["api_key_name"] is None
+
+    def test_create_upload_api_with_session_auth(self, temp_db):
+        """create_upload via API with session auth should have no api_key_name."""
+        user = db.create_user(
+            email="session-user@example.com",
+            name="Session User",
+            auth_type="local",
+        )
+
+        upload = db.create_upload(
+            upload_id="api-session-upload",
+            filenames=["test.json"],
+            file_sizes=[1024],
+            file_format="json_array",
+            user_id=user["id"],
+            upload_method="api",
+            api_key_name=None,  # Session auth, no API key
+        )
+
+        assert upload["upload_method"] == "api"
+        assert upload["api_key_name"] is None
+        assert upload["user_id"] == user["id"]
