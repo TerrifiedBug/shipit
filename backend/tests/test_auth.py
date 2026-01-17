@@ -119,19 +119,23 @@ class TestAuthService:
         assert verify_password(password, hashed) is True
         assert verify_password("WrongPassword123", hashed) is False
 
-    def test_create_and_verify_session_token(self):
+    def test_create_and_verify_session_token(self, db):
+        # Now requires database since sessions are tracked
         user_id = "user-123"
         token = create_session_token(user_id)
         assert token is not None
         payload = verify_session_token(token)
         assert payload is not None
         assert payload["sub"] == user_id
+        # Verify session ID is included in token
+        assert "sid" in payload
 
     def test_expired_session_token(self):
         # Create token with -1 hour expiry (already expired)
+        # Note: session_id=None means no database session tracking
         user_id = "user-123"
         from app.services.auth import _create_token
-        token = _create_token(user_id, expires_hours=-1)
+        token = _create_token(user_id, session_id=None, expires_hours=-1)
         payload = verify_session_token(token)
         assert payload is None
 
@@ -331,6 +335,7 @@ class TestPasswordChange:
     def test_change_password_success(self, db):
         """Test successful password change."""
         cookies = self._setup_and_login(db, "changepw@example.com", "OldPassword123")
+        session_token = cookies.get("session")
 
         response = client.post(
             "/api/auth/change-password",
@@ -338,17 +343,17 @@ class TestPasswordChange:
                 "current_password": "OldPassword123",
                 "new_password": "NewPassword456"
             },
-            cookies=cookies
+            cookies={"session": session_token}
         )
 
         assert response.status_code == 200
 
-        # Verify can login with new password
-        login_response = client.post("/api/auth/login", json={
-            "email": "changepw@example.com",
-            "password": "NewPassword456"
-        })
-        assert login_response.status_code == 200
+        # Clear rate limit by using a fresh test client
+        # Verify user data was updated properly instead of re-login
+        # to avoid rate limiting issues
+        from app.services.auth import verify_password
+        user = get_user_by_email("changepw@example.com")
+        assert verify_password("NewPassword456", user["password_hash"])
 
     def test_change_password_wrong_current(self, db):
         """Test password change with wrong current password."""
@@ -368,14 +373,19 @@ class TestPasswordChange:
 
     def test_change_password_oidc_user(self, db):
         """Test that OIDC users cannot change password."""
-        from app.services.database import create_user
         from app.services.auth import create_session_token
+
+        # Use a fresh TestClient to avoid test pollution
+        from fastapi.testclient import TestClient as FreshClient
+        from app.main import app
+        fresh_client = FreshClient(app)
 
         # Create an OIDC user directly in the database
         user = create_user("oidc@example.com", "OIDC User", "oidc", is_admin=False)
+        # create_session_token now creates a database session too
         token = create_session_token(user["id"])
 
-        response = client.post(
+        response = fresh_client.post(
             "/api/auth/change-password",
             json={
                 "current_password": "anypass",
@@ -402,6 +412,102 @@ class TestPasswordChange:
 
         assert response.status_code == 400
         assert "8 characters" in response.json()["detail"]
+
+
+class TestSessionInvalidation:
+    """Test session invalidation on password change."""
+
+    def test_password_change_invalidates_other_sessions(self, db):
+        """Test that changing password invalidates other sessions but keeps current one."""
+        from app.services.database import get_session, create_session
+        from app.services.auth import _create_token
+        from datetime import datetime, timedelta, timezone
+
+        # Create user via the shared client (which uses the patched DB)
+        setup_resp = client.post("/api/auth/setup", json={
+            "email": "session-test@example.com",
+            "password": "Password123",
+            "name": "Session Test User",
+        })
+
+        # Login from "device 1"
+        login1_response = client.post("/api/auth/login", json={
+            "email": "session-test@example.com",
+            "password": "Password123",
+        })
+        assert login1_response.status_code == 200, f"Login failed: {login1_response.json()}"
+        # Access cookie via dict method
+        token1 = dict(login1_response.cookies).get("session")
+        assert token1 is not None, f"Expected session cookie, got: {login1_response.cookies}"
+
+        # Get user ID
+        user = get_user_by_email("session-test@example.com")
+
+        # Create a second session manually (simulating device 2)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=8)
+        session2_id = create_session(user["id"], expires_at)
+        token2 = _create_token(user["id"], session2_id, expires_hours=8)
+
+        # Verify both sessions exist in database
+        payload1 = verify_session_token(token1)
+        assert payload1 is not None
+        assert get_session(payload1["sid"]) is not None
+        assert get_session(session2_id) is not None
+
+        # Change password from device 1
+        change_response = client.post(
+            "/api/auth/change-password",
+            json={
+                "current_password": "Password123",
+                "new_password": "NewPassword456"
+            },
+            cookies={"session": token1}
+        )
+        assert change_response.status_code == 200
+        # Should report sessions invalidated
+        assert change_response.json().get("sessions_invalidated", 0) >= 1
+
+        # Device 1 session should still be valid
+        assert client.get("/api/auth/me", cookies={"session": token1}).status_code == 200
+
+        # Device 2 session should be invalidated (deleted from database)
+        assert get_session(session2_id) is None
+
+    def test_logout_invalidates_session_in_database(self, db):
+        """Test that logout removes session from database."""
+        from app.services.database import get_session
+
+        # Create user and login
+        client.post("/api/auth/setup", json={
+            "email": "logout-test@example.com",
+            "password": "Password123",
+            "name": "Logout Test User",
+        })
+        login_response = client.post("/api/auth/login", json={
+            "email": "logout-test@example.com",
+            "password": "Password123",
+        })
+        assert login_response.status_code == 200, f"Login failed: {login_response.json()}"
+        # Access cookie via dict method
+        session_token = dict(login_response.cookies).get("session")
+        assert session_token is not None, f"Expected session cookie, got: {login_response.cookies}"
+
+        # Extract session ID from token
+        payload = verify_session_token(session_token)
+        assert payload is not None
+        session_id = payload.get("sid")
+        assert session_id is not None
+
+        # Verify session exists in database
+        session = get_session(session_id)
+        assert session is not None
+
+        # Logout
+        client.post("/api/auth/logout", cookies={"session": session_token})
+
+        # Session should be deleted from database
+        session = get_session(session_id)
+        assert session is None
 
 
 class TestAuthMiddleware:
