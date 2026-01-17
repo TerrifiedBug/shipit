@@ -31,7 +31,8 @@ ShipIt is designed for controlled self-service, with guardrails to prevent accid
 - **Comprehensive Audit Log**: All security-relevant events are logged including logins (success/failure), user management actions, API key operations, index operations, and ingestion activities. Admins can view and filter audit logs from the UI.
 - **Rate Limiting**: Per-user rate limiting (default: 10 uploads/minute) prevents abuse and accidental flooding.
 - **Field Count Limits**: Maximum fields per document (default: 1000) prevents OpenSearch mapping explosion from malformed data.
-- **API Key Scoping**: Programmatic access via API keys inherits the creating user's permissions, supports expiration dates, and is tracked in audit logs.
+- **API Key Scoping**: Programmatic access via API keys inherits the creating user's permissions, supports expiration dates, optional IP allowlisting, and is tracked in audit logs.
+- **Index Retention**: Optional automatic deletion of indices older than a configurable number of days. Only deletes ShipIt-managed indices.
 - **File Size Limits**: Configurable maximum upload size (default: 500MB) to prevent resource exhaustion.
 - **SSL Verification**: SSL certificate verification is enabled by default for OpenSearch connections.
 - **Session Security**: HTTP-only cookies with secure flag (HTTPS), configurable session duration.
@@ -138,6 +139,7 @@ docker run -p 80:80 --env-file .env shipit
 | `MAX_FILE_SIZE_MB` | `500` | Maximum upload file size in MB |
 | `MAX_FIELDS_PER_DOCUMENT` | `1000` | Maximum fields per document to prevent mapping explosion (0 to disable) |
 | `UPLOAD_RATE_LIMIT_PER_MINUTE` | `10` | Maximum uploads per minute per user (0 to disable) |
+| `INDEX_RETENTION_DAYS` | `0` | Auto-delete indices older than X days (0 to disable) |
 | `LOGIN_RATE_LIMIT_PER_MINUTE` | `5` | Maximum login attempts per IP per minute |
 | `ACCOUNT_LOCKOUT_ATTEMPTS` | `5` | Failed login attempts before account lockout |
 | `ACCOUNT_LOCKOUT_MINUTES` | `15` | Duration of account lockout |
@@ -251,10 +253,10 @@ For programmatic access (scripts, CI/CD pipelines), users can create API keys:
 
 1. Log in to ShipIt
 2. Click **API Keys** in the header
-3. Click **Create New Key**, set name and expiry
+3. Click **Create New Key**, set name, expiry, and optional IP restrictions
 4. Copy the key (shown only once)
 
-API keys inherit the creating user's permissions and are tracked in audit logs.
+API keys inherit the creating user's permissions and are tracked in audit logs. Optional IP allowlisting restricts which IP addresses can use the key (supports individual IPs and CIDR notation like `10.0.0.0/24`).
 
 ### Programmatic Upload API
 
