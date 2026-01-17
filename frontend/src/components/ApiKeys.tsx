@@ -102,6 +102,45 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
     return new Date(expiresAt) < new Date();
   };
 
+  const getDaysUntilExpiry = (expiresAt: string): number => {
+    const now = new Date();
+    const expiry = new Date(expiresAt);
+    const diffMs = expiry.getTime() - now.getTime();
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  };
+
+  const getExpiryWarning = (expiresAt: string): { type: 'danger' | 'warning' | null; message: string | null } => {
+    const days = getDaysUntilExpiry(expiresAt);
+    if (days <= 0) {
+      return { type: 'danger', message: 'Expired' };
+    } else if (days === 1) {
+      return { type: 'danger', message: 'Expires today' };
+    } else if (days <= 7) {
+      return { type: 'warning', message: `Expires in ${days} days` };
+    }
+    return { type: null, message: null };
+  };
+
+  // Sort keys: expiring soon first, then by creation date
+  const sortedKeys = [...keys].sort((a, b) => {
+    const aDays = getDaysUntilExpiry(a.expires_at);
+    const bDays = getDaysUntilExpiry(b.expires_at);
+
+    // Expired keys first
+    if (aDays <= 0 && bDays > 0) return -1;
+    if (bDays <= 0 && aDays > 0) return 1;
+
+    // Then keys expiring within 7 days
+    if (aDays <= 7 && bDays > 7) return -1;
+    if (bDays <= 7 && aDays > 7) return 1;
+
+    // Within same priority, sort by days until expiry
+    if (aDays <= 7 && bDays <= 7) return aDays - bDays;
+
+    // Otherwise, most recently created first
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
   // Handle backdrop click
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget && !keyToDelete && !newlyCreatedKey) {
@@ -285,18 +324,35 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
             </div>
           ) : (
             <div className="space-y-2">
-              {keys.map((key) => (
+              {sortedKeys.map((key) => {
+                const expiryWarning = getExpiryWarning(key.expires_at);
+                return (
                 <div
                   key={key.id}
                   className={`p-4 border rounded-lg ${
                     isExpired(key.expires_at)
                       ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
+                      : expiryWarning.type === 'warning'
+                      ? 'border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/20'
                       : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div>
-                      <h4 className="font-medium text-gray-900 dark:text-white">{key.name}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-medium text-gray-900 dark:text-white">{key.name}</h4>
+                        {expiryWarning.message && (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                              expiryWarning.type === 'danger'
+                                ? 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'
+                                : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300'
+                            }`}
+                          >
+                            {expiryWarning.message}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                         Created: {formatDate(key.created_at)}
                         {' | '}
@@ -339,7 +395,8 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
