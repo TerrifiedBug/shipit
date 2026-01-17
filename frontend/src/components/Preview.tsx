@@ -1,10 +1,25 @@
-import { FieldInfo, UploadResponse } from '../api/client';
+import { useState } from 'react';
+import { FieldInfo, FileFormat, UploadResponse, reparseUpload } from '../api/client';
+import { useToast } from '../contexts/ToastContext';
 
 interface PreviewProps {
   data: UploadResponse;
   onBack: () => void;
   onContinue: () => void;
+  onDataUpdate?: (data: UploadResponse) => void;
 }
+
+// All supported file formats
+const FILE_FORMATS: { value: FileFormat; label: string }[] = [
+  { value: 'json_array', label: 'JSON Array' },
+  { value: 'ndjson', label: 'NDJSON' },
+  { value: 'csv', label: 'CSV' },
+  { value: 'tsv', label: 'TSV' },
+  { value: 'ltsv', label: 'LTSV' },
+  { value: 'syslog', label: 'Syslog' },
+  { value: 'logfmt', label: 'Logfmt' },
+  { value: 'raw', label: 'Raw Lines' },
+];
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -13,16 +28,8 @@ function formatFileSize(bytes: number): string {
 }
 
 function formatFileFormat(format: string): string {
-  switch (format) {
-    case 'json_array':
-      return 'JSON Array';
-    case 'ndjson':
-      return 'NDJSON';
-    case 'csv':
-      return 'CSV';
-    default:
-      return format;
-  }
+  const found = FILE_FORMATS.find((f) => f.value === format);
+  return found ? found.label : format;
 }
 
 function getTypeColor(type: string): string {
@@ -51,8 +58,41 @@ function FieldBadge({ field }: { field: FieldInfo }) {
   );
 }
 
-export function Preview({ data, onBack, onContinue }: PreviewProps) {
-  const { filename, file_size, file_format, preview, fields } = data;
+export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps) {
+  const { filename, file_size, file_format, preview, fields, upload_id } = data;
+  const [selectedFormat, setSelectedFormat] = useState<FileFormat>(file_format);
+  const [isReparsing, setIsReparsing] = useState(false);
+  const { addToast } = useToast();
+
+  const handleFormatChange = async (newFormat: FileFormat) => {
+    if (newFormat === selectedFormat) return;
+
+    setSelectedFormat(newFormat);
+    setIsReparsing(true);
+
+    try {
+      const result = await reparseUpload(upload_id, newFormat);
+      // Update the parent with new preview data
+      if (onDataUpdate) {
+        onDataUpdate({
+          ...data,
+          file_format: result.file_format,
+          preview: result.preview,
+          fields: result.fields,
+        });
+      }
+      addToast(`File reparsed as ${formatFileFormat(newFormat)}`, 'success');
+    } catch (error) {
+      // Revert format selection on error
+      setSelectedFormat(file_format);
+      addToast(
+        error instanceof Error ? error.message : 'Failed to reparse file',
+        'error'
+      );
+    } finally {
+      setIsReparsing(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -63,9 +103,33 @@ export function Preview({ data, onBack, onContinue }: PreviewProps) {
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{filename}</h2>
             <div className="mt-1 flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
               <span>{formatFileSize(file_size)}</span>
-              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200 rounded">
-                {formatFileFormat(file_format)}
-              </span>
+              {/* Format dropdown */}
+              <div className="relative inline-block">
+                <select
+                  value={selectedFormat}
+                  onChange={(e) => handleFormatChange(e.target.value as FileFormat)}
+                  disabled={isReparsing}
+                  className="appearance-none px-3 py-0.5 pr-8 bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200 rounded border-0 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {FILE_FORMATS.map((format) => (
+                    <option key={format.value} value={format.value}>
+                      {format.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                  {isReparsing ? (
+                    <svg className="animate-spin h-4 w-4 text-indigo-600 dark:text-indigo-300" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4 text-indigo-600 dark:text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
+                </div>
+              </div>
               <span>{preview.length} records previewed</span>
             </div>
           </div>

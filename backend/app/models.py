@@ -5,6 +5,10 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 
+# Supported file formats for parsing
+FileFormat = Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog", "logfmt", "raw"]
+
+
 class FieldInfo(BaseModel):
     name: str
     type: str
@@ -15,7 +19,7 @@ class UploadResponse(BaseModel):
     filename: str  # Display name (comma-separated if multiple)
     filenames: list[str] = []  # Individual filenames
     file_size: int  # Total size
-    file_format: Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog"]
+    file_format: FileFormat
     preview: list[dict[str, Any]]
     fields: list[FieldInfo]
 
@@ -23,7 +27,7 @@ class UploadResponse(BaseModel):
 class PreviewResponse(BaseModel):
     upload_id: str
     filename: str
-    file_format: Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog"]
+    file_format: FileFormat
     preview: list[dict[str, Any]]
     fields: list[FieldInfo]
 

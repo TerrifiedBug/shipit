@@ -223,6 +223,10 @@ def stream_records(
         yield from _stream_ltsv(safe_path)
     elif file_format == "syslog":
         yield from _stream_syslog(safe_path)
+    elif file_format == "logfmt":
+        yield from _stream_logfmt(safe_path)
+    elif file_format == "raw":
+        yield from _stream_raw(safe_path)
     else:
         yield from _stream_csv(safe_path)
 
@@ -351,6 +355,36 @@ def _stream_syslog(file_path: Path) -> Iterator[dict[str, Any]]:
 
             # Fallback
             yield {"message": line}
+
+
+# Logfmt pattern: key=value, key="quoted", key='quoted'
+_LOGFMT_PATTERN = re.compile(r'(\w+)=(?:"([^"]*)"|\'([^\']*)\'|(\S+))')
+
+
+def _stream_logfmt(file_path: Path) -> Iterator[dict[str, Any]]:
+    """Stream records from a logfmt file."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            record = {}
+            for match in _LOGFMT_PATTERN.finditer(line):
+                key = match.group(1)
+                # Value is in group 2 (double-quoted), 3 (single-quoted), or 4 (unquoted)
+                value = match.group(2) or match.group(3) or match.group(4)
+                record[key] = value
+
+            if record:
+                yield record
+
+
+def _stream_raw(file_path: Path) -> Iterator[dict[str, Any]]:
+    """Stream records from a raw file - each line as raw_message."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            yield {"raw_message": line.rstrip('\n\r')}
 
 
 def count_records(file_path: Path, file_format: str) -> int:

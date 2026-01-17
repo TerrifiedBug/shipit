@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
-from app.routers import admin, api_upload, audit, auth, health, history, indexes, keys, upload
+from app.routers import admin, api_upload, audit, auth, health, history, indexes, keys, patterns, upload
 from app.routers.auth import get_current_user
 from app.services.database import init_db
 from app.services.retention import start_retention_task, stop_retention_task
@@ -82,3 +82,4 @@ app.include_router(indexes.router, prefix="/api")
 app.include_router(keys.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
+app.include_router(patterns.router)  # Has its own /api/patterns prefix

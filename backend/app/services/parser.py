@@ -8,7 +8,7 @@ import ijson
 
 from app.config import settings
 
-FileFormat = Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog"]
+FileFormat = Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog", "logfmt", "raw"]
 
 
 def _validate_file_path(file_path: Path) -> Path:
@@ -77,7 +77,39 @@ def detect_format(file_path: Path) -> FileFormat:
         elif char == "{":
             return "ndjson"
         else:
+            # Check for logfmt pattern before falling back to CSV
+            f.seek(0)
+            if _detect_logfmt(f):
+                return "logfmt"
             return "csv"
+
+
+def _detect_logfmt(f) -> bool:
+    """Detect if file content looks like logfmt (key=value pairs)."""
+    # Pattern: key=value or key="quoted value" or key='quoted value'
+    logfmt_pattern = re.compile(r'\b\w+=(?:"[^"]*"|\'[^\']*\'|\S+)')
+
+    lines_checked = 0
+    lines_matched = 0
+
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+
+        lines_checked += 1
+        if lines_checked > 20:  # Check first 20 non-empty lines
+            break
+
+        # Count key=value pairs in the line
+        matches = logfmt_pattern.findall(line)
+        if len(matches) >= 2:  # At least 2 key=value pairs
+            lines_matched += 1
+
+    # Return True if at least 70% of lines match logfmt pattern
+    if lines_checked == 0:
+        return False
+    return lines_matched / lines_checked >= 0.7
 
 
 def parse_preview(file_path: Path, format: FileFormat, limit: int = 100) -> list[dict]:
@@ -93,6 +125,10 @@ def parse_preview(file_path: Path, format: FileFormat, limit: int = 100) -> list
         return _parse_ltsv(safe_path, limit)
     elif format == "syslog":
         return _parse_syslog(safe_path, limit)
+    elif format == "logfmt":
+        return _parse_logfmt(safe_path, limit)
+    elif format == "raw":
+        return _parse_raw(safe_path, limit)
     else:
         return _parse_csv(safe_path, limit)
 
@@ -273,6 +309,45 @@ def _parse_syslog(file_path: Path, limit: int) -> list[dict]:
             if len(records) >= limit:
                 break
 
+    return records
+
+
+def _parse_logfmt(file_path: Path, limit: int) -> list[dict]:
+    """Parse logfmt format: key=value key2="quoted value" ..."""
+    # Regex handles: key=value, key="quoted", key='quoted'
+    pattern = re.compile(r'(\w+)=(?:"([^"]*)"|\'([^\']*)\'|(\S+))')
+
+    records = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            record = {}
+            for match in pattern.finditer(line):
+                key = match.group(1)
+                # Value is in group 2 (double-quoted), 3 (single-quoted), or 4 (unquoted)
+                value = match.group(2) or match.group(3) or match.group(4)
+                record[key] = value
+
+            if record:
+                records.append(record)
+                if len(records) >= limit:
+                    break
+
+    return records
+
+
+def _parse_raw(file_path: Path, limit: int) -> list[dict]:
+    """Fallback parser - each line becomes a record with raw_message field."""
+    records = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip('\n\r')
+            records.append({"raw_message": line})
+            if len(records) >= limit:
+                break
     return records
 
 
