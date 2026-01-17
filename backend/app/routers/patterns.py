@@ -12,6 +12,8 @@ from app.services.grok_patterns import (
     validate_grok_pattern,
     validate_regex_pattern,
     parse_with_grok,
+    safe_regex_match,
+    RegexTimeoutError,
 )
 
 router = APIRouter(prefix="/api/patterns", tags=["patterns"])
@@ -215,8 +217,6 @@ async def test_pattern(
     user: dict = Depends(require_auth),
 ) -> PatternTestResponse:
     """Test a pattern against sample text."""
-    import re
-
     try:
         if data.pattern_type == "grok":
             result = parse_with_grok(data.test_text, data.pattern)
@@ -225,17 +225,22 @@ async def test_pattern(
             else:
                 return PatternTestResponse(success=False, error="Pattern did not match")
         else:
-            # Regex pattern
+            # Regex pattern - use safe_regex_match for ReDoS protection
             is_valid, error = validate_regex_pattern(data.pattern)
             if not is_valid:
                 return PatternTestResponse(success=False, error=error)
 
-            match = re.match(data.pattern, data.test_text)
+            match = safe_regex_match(data.pattern, data.test_text)
             if match:
                 return PatternTestResponse(success=True, matches=match.groupdict())
             else:
                 return PatternTestResponse(success=False, error="Pattern did not match")
 
+    except RegexTimeoutError:
+        return PatternTestResponse(
+            success=False,
+            error="Pattern matching timed out - the pattern may be too complex"
+        )
     except Exception as e:
         return PatternTestResponse(success=False, error=str(e))
 

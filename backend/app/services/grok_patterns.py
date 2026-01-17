@@ -11,9 +11,62 @@ through the API, which are stored in the database.
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Any
 
 from app.services.database import get_grok_patterns_dict
+
+
+# Default timeout for regex matching (in seconds)
+REGEX_TIMEOUT_SECONDS = 5
+
+
+class RegexTimeoutError(Exception):
+    """Raised when a regex operation exceeds the timeout."""
+    pass
+
+
+def _match_with_timeout_thread(
+    pattern: str | re.Pattern,
+    text: str,
+    timeout: float = REGEX_TIMEOUT_SECONDS,
+) -> re.Match | None:
+    """Execute regex match with timeout using a thread pool.
+
+    This is a cross-platform solution that works on all systems.
+    """
+    compiled = pattern if isinstance(pattern, re.Pattern) else re.compile(pattern)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(compiled.match, text)
+        try:
+            return future.result(timeout=timeout)
+        except FuturesTimeoutError:
+            raise RegexTimeoutError(
+                f"Regex matching timed out after {timeout} seconds"
+            )
+
+
+def safe_regex_match(
+    pattern: str | re.Pattern,
+    text: str,
+    timeout: float = REGEX_TIMEOUT_SECONDS,
+) -> re.Match | None:
+    """Safely execute regex match with timeout protection against ReDoS attacks.
+
+    Args:
+        pattern: Compiled regex pattern or pattern string
+        text: Text to match against
+        timeout: Maximum time to allow for matching (default: 5 seconds)
+
+    Returns:
+        Match object if pattern matches, None otherwise
+
+    Raises:
+        RegexTimeoutError: If matching exceeds timeout
+        re.error: If pattern is invalid
+    """
+    return _match_with_timeout_thread(pattern, text, timeout)
 
 
 # Built-in grok patterns (based on common Logstash/Elastic patterns)
@@ -174,12 +227,12 @@ def parse_with_grok(text: str, pattern: str) -> dict[str, Any] | None:
     """
     try:
         regex = expand_grok(pattern)
-        match = re.match(regex, text)
+        match = safe_regex_match(regex, text)
 
         if match:
             return match.groupdict()
         return None
-    except (ValueError, re.error):
+    except (ValueError, re.error, RegexTimeoutError):
         return None
 
 
