@@ -67,7 +67,7 @@ const MULTILINE_PRESETS = [
 ];
 
 export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps) {
-  const { filename, file_size, file_format, preview, fields, upload_id } = data;
+  const { filename, file_size, file_format, preview, fields, upload_id, raw_preview } = data;
   const [selectedFormat, setSelectedFormat] = useState<FileFormat | 'custom'>(file_format);
   const [isReparsing, setIsReparsing] = useState(false);
   const [patterns, setPatterns] = useState<Pattern[]>([]);
@@ -84,6 +84,11 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
       listPatterns().then(setPatterns).catch(console.error);
     }
   }, [selectedFormat]);
+
+  // Refresh patterns when dropdown is focused (in case patterns were deleted elsewhere)
+  const handlePatternDropdownFocus = () => {
+    listPatterns().then(setPatterns).catch(console.error);
+  };
 
   const handleFormatChange = async (newFormat: FileFormat | 'custom') => {
     if (newFormat === selectedFormat) return;
@@ -118,6 +123,7 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
           file_format: result.file_format as FileFormat,
           preview: result.preview,
           fields: result.fields,
+          raw_preview: result.raw_preview || data.raw_preview,
         });
       }
       addToast(`File reparsed as ${formatFileFormat(newFormat)}`, 'success');
@@ -151,6 +157,7 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
           file_format: result.file_format as FileFormat,
           preview: result.preview,
           fields: result.fields,
+          raw_preview: result.raw_preview || data.raw_preview,
         });
       }
       addToast('File reparsed with custom pattern', 'success');
@@ -183,6 +190,7 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
           file_format: result.file_format as FileFormat,
           preview: result.preview,
           fields: result.fields,
+          raw_preview: result.raw_preview || data.raw_preview,
         });
       }
       addToast('Preview updated', 'success');
@@ -234,6 +242,7 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
                 <select
                   value={selectedPatternId || ''}
                   onChange={(e) => handlePatternChange(e.target.value)}
+                  onFocus={handlePatternDropdownFocus}
                   className="px-2 py-0.5 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 rounded text-sm"
                   disabled={isReparsing}
                 >
@@ -381,6 +390,7 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
           onClose={() => setShowPatternModal(false)}
           onSave={handlePatternCreated}
           initialTestSample={
+            raw_preview?.[0] ||
             preview[0]?.raw_message as string ||
             JSON.stringify(preview[0], null, 2)
           }
