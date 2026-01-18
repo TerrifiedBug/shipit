@@ -101,3 +101,79 @@ class TestCsvValidation:
         file_path = temp_dir / "test.txt"
         file_path.write_text("anything")
         validate_format(file_path, "raw")  # Should not raise - no validator for raw
+
+
+class TestJsonValidation:
+    def test_valid_json_array_passes(self, temp_dir):
+        """Valid JSON array should pass validation."""
+        file_path = temp_dir / "valid.json"
+        file_path.write_text('[{"name": "Alice"}, {"name": "Bob"}]')
+        validate_format(file_path, "json_array")
+
+    def test_ndjson_as_json_array_fails(self, temp_dir):
+        """NDJSON file selected as JSON array should fail."""
+        file_path = temp_dir / "ndjson.json"
+        file_path.write_text('{"name": "Alice"}\n{"name": "Bob"}')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "json_array")
+        assert "ndjson" in [s.lower() for s in exc_info.value.suggested_formats]
+
+    def test_empty_json_file_fails(self, temp_dir):
+        """Empty JSON file should fail validation."""
+        file_path = temp_dir / "empty.json"
+        file_path.write_text("")
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "json_array")
+        assert "empty" in exc_info.value.message.lower()
+
+    def test_invalid_json_fails(self, temp_dir):
+        """Invalid JSON should fail with suggestions."""
+        file_path = temp_dir / "invalid.json"
+        file_path.write_text('[{"name": "Alice"')  # Missing closing brackets
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "json_array")
+        assert "ndjson" in [s.lower() for s in exc_info.value.suggested_formats]
+
+
+class TestNdjsonValidation:
+    def test_valid_ndjson_passes(self, temp_dir):
+        """Valid NDJSON should pass validation."""
+        file_path = temp_dir / "valid.ndjson"
+        file_path.write_text('{"a": 1}\n{"b": 2}\n{"c": 3}')
+        validate_format(file_path, "ndjson")
+
+    def test_invalid_json_lines_fail(self, temp_dir):
+        """Lines that aren't valid JSON should fail."""
+        file_path = temp_dir / "invalid.ndjson"
+        file_path.write_text('not json\nalso not json')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "ndjson")
+        assert "raw" in [s.lower() for s in exc_info.value.suggested_formats]
+
+    def test_ndjson_with_empty_lines_passes(self, temp_dir):
+        """NDJSON with empty lines should still pass."""
+        file_path = temp_dir / "with_empty.ndjson"
+        file_path.write_text('{"a": 1}\n\n{"b": 2}\n\n{"c": 3}')
+        validate_format(file_path, "ndjson")
+
+    def test_mostly_invalid_lines_fail(self, temp_dir):
+        """NDJSON with more invalid than valid lines should fail."""
+        file_path = temp_dir / "mostly_invalid.ndjson"
+        file_path.write_text('{"valid": 1}\nnot json\nalso not json\nstill not json')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "ndjson")
+        assert "raw" in [s.lower() for s in exc_info.value.suggested_formats]
+
+    def test_json_array_lines_fail(self, temp_dir):
+        """Lines that are JSON arrays (not objects) should fail."""
+        file_path = temp_dir / "arrays.ndjson"
+        file_path.write_text('[1, 2, 3]\n[4, 5, 6]')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "ndjson")
+        assert "raw" in [s.lower() for s in exc_info.value.suggested_formats]

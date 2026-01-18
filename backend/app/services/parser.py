@@ -624,6 +624,67 @@ def validate_field_count(records: list[dict], max_fields: int) -> tuple[bool, in
     return True, max_found
 
 
+def _validate_json_array(file_path: Path) -> None:
+    """Validate file is a JSON array."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read(8192).lstrip()
+
+        if not content:
+            raise FormatValidationError("File is empty", suggested_formats=[])
+
+        if not content.startswith("["):
+            raise FormatValidationError(
+                "File is not a JSON array - must start with '['. Try: NDJSON",
+                suggested_formats=["ndjson"]
+            )
+
+        # Try to parse
+        f.seek(0)
+        try:
+            json.load(f)
+        except json.JSONDecodeError as e:
+            raise FormatValidationError(
+                f"File is not valid JSON: {e}. Try: NDJSON or Raw",
+                suggested_formats=["ndjson", "raw"]
+            )
+
+
+def _validate_ndjson(file_path: Path) -> None:
+    """Validate file is NDJSON (newline-delimited JSON)."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        valid_lines = 0
+        invalid_lines = 0
+
+        for i, line in enumerate(f):
+            if i >= 5:  # Check first 5 lines
+                break
+
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                obj = json.loads(line)
+                if not isinstance(obj, dict):
+                    invalid_lines += 1
+                else:
+                    valid_lines += 1
+            except json.JSONDecodeError:
+                invalid_lines += 1
+
+        if valid_lines == 0:
+            raise FormatValidationError(
+                "Lines are not valid JSON objects. Try: Raw or Logfmt",
+                suggested_formats=["raw", "logfmt"]
+            )
+
+        if invalid_lines > valid_lines:
+            raise FormatValidationError(
+                f"Most lines are not valid JSON ({invalid_lines}/{valid_lines + invalid_lines}). Try: Raw or Logfmt",
+                suggested_formats=["raw", "logfmt"]
+            )
+
+
 def _validate_csv(file_path: Path) -> None:
     """Validate file looks like CSV with header row."""
     with open(file_path, "r", encoding="utf-8") as f:
@@ -677,6 +738,8 @@ def validate_format(file_path: Path, file_format: str) -> None:
     """
     validators = {
         "csv": _validate_csv,
+        "json_array": _validate_json_array,
+        "ndjson": _validate_ndjson,
     }
 
     validator = validators.get(file_format)
