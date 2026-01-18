@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import threading
 import time
@@ -293,6 +294,7 @@ async def reparse_upload(
     upload_id: str,
     format: str = Form(...),
     pattern_id: str | None = Form(None),
+    multiline_start: str | None = Form(None),
     user: dict = Depends(require_auth),
 ):
     """Re-parse uploaded file with a different format."""
@@ -321,6 +323,13 @@ async def reparse_upload(
     if format not in valid_formats:
         raise HTTPException(status_code=400, detail=f"Invalid format: {format}")
 
+    # Validate multiline pattern if provided
+    if multiline_start:
+        try:
+            re.compile(multiline_start)
+        except re.error as e:
+            raise HTTPException(status_code=400, detail=f"Invalid multiline pattern: {e}")
+
     # Parse with new format
     try:
         combined_preview = []
@@ -341,7 +350,9 @@ async def reparse_upload(
         else:
             # Existing standard format parsing
             for file_path in existing_paths:
-                preview_records = parse_preview(file_path, format, limit=100)
+                preview_records = parse_preview(
+                    file_path, format, limit=100, multiline_start=multiline_start
+                )
                 combined_preview.extend(preview_records)
                 if len(combined_preview) >= 100:
                     combined_preview = combined_preview[:100]
@@ -361,7 +372,7 @@ async def reparse_upload(
         fields = infer_fields(combined_preview)
 
         # Update upload record with new format
-        db.update_upload(safe_id, file_format=format, pattern_id=pattern_id)
+        db.update_upload(safe_id, file_format=format, pattern_id=pattern_id, multiline_start=multiline_start)
 
         # Update cache
         _upload_cache[safe_id] = {
@@ -374,6 +385,7 @@ async def reparse_upload(
             "upload_id": safe_id,
             "file_format": format,
             "pattern_id": pattern_id,
+            "multiline_start": multiline_start,
             "preview": combined_preview[:100],
             "fields": [{"name": f["name"], "type": f["type"]} for f in fields],
         }
