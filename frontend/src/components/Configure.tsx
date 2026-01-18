@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   cancelIngest,
   FieldInfo,
+  FieldTransform,
   IngestResponse,
   ProgressEvent,
   startIngest,
@@ -9,6 +10,24 @@ import {
   UploadResponse,
 } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+
+// Available transforms that can be applied to fields
+const AVAILABLE_TRANSFORMS = [
+  { name: 'lowercase', label: 'Lowercase', options: [] as string[] },
+  { name: 'uppercase', label: 'Uppercase', options: [] as string[] },
+  { name: 'trim', label: 'Trim Whitespace', options: [] as string[] },
+  { name: 'truncate', label: 'Truncate', options: ['max_length'] },
+  { name: 'regex_extract', label: 'Regex Extract', options: ['pattern'] },
+  { name: 'regex_replace', label: 'Regex Replace', options: ['pattern', 'replacement'] },
+  { name: 'base64_decode', label: 'Base64 Decode', options: [] as string[] },
+  { name: 'url_decode', label: 'URL Decode', options: [] as string[] },
+  { name: 'hash_sha256', label: 'SHA256 Hash', options: [] as string[] },
+  { name: 'mask_email', label: 'Mask Email', options: [] as string[] },
+  { name: 'mask_ip', label: 'Mask IP', options: [] as string[] },
+  { name: 'default', label: 'Default Value', options: ['default_value'] },
+  { name: 'parse_json', label: 'Parse JSON', options: ['path'] },
+  { name: 'parse_kv', label: 'Parse Key=Value', options: ['delimiter', 'separator'] },
+];
 
 interface ConfigureProps {
   data: UploadResponse;
@@ -92,9 +111,33 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
     });
     return initial;
   });
+  const [fieldTransforms, setFieldTransforms] = useState<Record<string, FieldTransform[]>>({});
 
   const setFieldType = (fieldName: string, type: string) => {
     setFieldTypes(prev => ({ ...prev, [fieldName]: type }));
+  };
+
+  const addTransform = (fieldName: string, transformName: string) => {
+    setFieldTransforms(prev => ({
+      ...prev,
+      [fieldName]: [...(prev[fieldName] || []), { name: transformName }]
+    }));
+  };
+
+  const removeTransform = (fieldName: string, index: number) => {
+    setFieldTransforms(prev => ({
+      ...prev,
+      [fieldName]: prev[fieldName].filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateTransformOption = (fieldName: string, index: number, option: string, value: string | number) => {
+    setFieldTransforms(prev => ({
+      ...prev,
+      [fieldName]: prev[fieldName].map((t, i) =>
+        i === index ? { ...t, [option]: value } : t
+      )
+    }));
   };
 
   // Track if form has been modified
@@ -108,8 +151,11 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
       (f, i) => f.excluded || f.mappedName !== data.fields[i].name
     )) return true;
     // Check if any field types have changed
-    return data.fields.some(f => fieldTypes[f.name] !== f.type);
-  }, [indexName, timestampField, includeFilename, filenameField, fieldMappings, fieldTypes, data.fields]);
+    if (data.fields.some(f => fieldTypes[f.name] !== f.type)) return true;
+    // Check if any field has transforms
+    if (Object.keys(fieldTransforms).some(k => fieldTransforms[k]?.length > 0)) return true;
+    return false;
+  }, [indexName, timestampField, includeFilename, filenameField, fieldMappings, fieldTypes, fieldTransforms, data.fields]);
 
   const handleBack = () => {
     if (isDirty && !isIngesting) {
@@ -178,6 +224,14 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
         }
       });
 
+      // Build field transforms (only include fields with transforms)
+      const transforms: Record<string, FieldTransform[]> = {};
+      Object.keys(fieldTransforms).forEach(fieldName => {
+        if (fieldTransforms[fieldName]?.length > 0) {
+          transforms[fieldName] = fieldTransforms[fieldName];
+        }
+      });
+
       // Start ingestion (returns immediately)
       const startResult = await startIngest(data.upload_id, {
         index_name: indexName,
@@ -185,6 +239,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
         field_mappings: mappings,
         excluded_fields: excluded,
         field_types: typeOverrides,
+        field_transforms: Object.keys(transforms).length > 0 ? transforms : undefined,
         include_filename: includeFilename,
         filename_field: filenameField,
       });
@@ -433,6 +488,9 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                   Target Field
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                  Transforms
+                </th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                   Exclude
                 </th>
@@ -472,6 +530,52 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                         disabled={field.excluded || isIngesting}
                         className="block w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 dark:disabled:bg-gray-600"
                       />
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="space-y-1">
+                        {/* Show existing transforms */}
+                        {(fieldTransforms[field.originalName] || []).map((transform, idx) => {
+                          const transformDef = AVAILABLE_TRANSFORMS.find(t => t.name === transform.name);
+                          return (
+                            <div key={idx} className="flex items-center gap-1 text-xs">
+                              <span className="bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 px-2 py-0.5 rounded">
+                                {transformDef?.label || transform.name}
+                              </span>
+                              {/* Options inputs */}
+                              {transformDef?.options.map(opt => (
+                                <input
+                                  key={opt}
+                                  type={opt === 'max_length' ? 'number' : 'text'}
+                                  placeholder={opt}
+                                  value={(transform[opt] as string | number) || ''}
+                                  onChange={(e) => updateTransformOption(field.originalName, idx, opt, e.target.value)}
+                                  className="w-20 px-1 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  disabled={field.excluded || isIngesting}
+                                />
+                              ))}
+                              <button
+                                onClick={() => removeTransform(field.originalName, idx)}
+                                className="text-red-500 hover:text-red-700"
+                                disabled={field.excluded || isIngesting}
+                              >
+                                x
+                              </button>
+                            </div>
+                          );
+                        })}
+                        {/* Add transform dropdown */}
+                        <select
+                          value=""
+                          onChange={(e) => e.target.value && addTransform(field.originalName, e.target.value)}
+                          disabled={field.excluded || isIngesting}
+                          className="text-xs border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                        >
+                          <option value="">+ Add transform</option>
+                          {AVAILABLE_TRANSFORMS.map(t => (
+                            <option key={t.name} value={t.name}>{t.label}</option>
+                          ))}
+                        </select>
+                      </div>
                     </td>
                     <td className="px-4 py-2 text-center">
                       <input

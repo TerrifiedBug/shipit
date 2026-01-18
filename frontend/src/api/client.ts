@@ -249,12 +249,18 @@ export async function getPreview(uploadId: string): Promise<PreviewResponse> {
   return response.json();
 }
 
+export interface FieldTransform {
+  name: string;
+  [key: string]: string | number | undefined;
+}
+
 export interface IngestRequest {
   index_name: string;
   timestamp_field?: string | null;
   field_mappings: Record<string, string>;
   excluded_fields: string[];
   field_types?: Record<string, string>;
+  field_transforms?: Record<string, FieldTransform[]>;
   include_filename?: boolean;
   filename_field?: string;
 }
