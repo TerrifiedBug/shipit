@@ -164,7 +164,7 @@ def coerce_value(value: Any, target_type: str) -> Any:
 
 def merge_multiline(
     lines: Iterator[str],
-    start_pattern: str,
+    start_pattern: str | re.Pattern,
     max_lines: int = 100,
     separator: str = "\n",
 ) -> Iterator[str]:
@@ -172,20 +172,38 @@ def merge_multiline(
 
     Args:
         lines: Iterator of lines to process
-        start_pattern: Regex pattern that marks start of new record
+        start_pattern: Regex pattern (string or compiled) that marks start of new record
         max_lines: Maximum lines to merge before forcing flush
         separator: String to join merged lines
 
     Yields:
         Merged lines where continuation lines are joined to previous
+
+    Note:
+        Uses safe_regex_match with timeout protection against ReDoS attacks.
     """
-    compiled = re.compile(start_pattern)
+    from app.services.grok_patterns import safe_regex_match, RegexTimeoutError
+
+    # Pre-compile pattern if string (validated upstream)
+    if isinstance(start_pattern, str):
+        compiled = re.compile(start_pattern)
+    else:
+        compiled = start_pattern
+
     buffer: list[str] = []
 
     for line in lines:
         line = line.rstrip('\n\r')
 
-        if compiled.match(line):
+        try:
+            # Use safe_regex_match with timeout protection against ReDoS
+            match = safe_regex_match(compiled, line, timeout=1.0)
+            is_start = match is not None
+        except RegexTimeoutError:
+            # If regex times out, treat as non-matching (continuation line)
+            is_start = False
+
+        if is_start:
             # New record starts - flush buffer
             if buffer:
                 yield separator.join(buffer)

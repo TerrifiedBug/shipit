@@ -209,7 +209,14 @@ async def expand_grok_pattern(
         groups = re.findall(r'\?P<(\w+)>', expanded)
         return {"expanded": expanded, "groups": groups, "valid": True}
     except ValueError as e:
-        return {"expanded": None, "groups": [], "valid": False, "error": str(e)}
+        # Sanitize error message to avoid exposing internal details
+        error_msg = str(e)
+        # Only expose safe error messages about unknown patterns
+        if "Unknown grok pattern" in error_msg or "Unknown pattern" in error_msg:
+            safe_error = error_msg
+        else:
+            safe_error = "Invalid grok pattern syntax"
+        return {"expanded": None, "groups": [], "valid": False, "error": safe_error}
 
 
 @router.get("/grok")
