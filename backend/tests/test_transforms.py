@@ -89,3 +89,23 @@ class TestRegexTransforms:
         """truncate should limit string length."""
         result = apply_transform("abcdefghij", "truncate", max_length=5)
         assert result == "abcde"
+
+    def test_regex_extract_invalid_pattern(self):
+        """Invalid regex should return original value."""
+        result = apply_transform("test", "regex_extract", pattern="[unclosed")
+        assert result == "test"
+
+    def test_regex_extract_no_capture_group(self):
+        """Pattern without capture group returns original."""
+        result = apply_transform("hello", "regex_extract", pattern=r"\w+")
+        assert result == "hello"
+
+    def test_truncate_zero_length(self):
+        """Truncate to 0 returns empty string."""
+        result = apply_transform("test", "truncate", max_length=0)
+        assert result == ""
+
+    def test_regex_replace_empty_replacement(self):
+        """Empty replacement should remove matches."""
+        result = apply_transform("hello123world", "regex_replace", pattern=r"\d+", replacement="")
+        assert result == "helloworld"

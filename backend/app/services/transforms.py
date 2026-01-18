@@ -2,8 +2,14 @@
 """Field transformation functions for data ingestion."""
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Limit pattern complexity to mitigate ReDoS attacks
+MAX_PATTERN_LENGTH = 500
 
 
 def apply_transform(value: Any, transform_name: str, **options) -> Any:
@@ -62,12 +68,15 @@ def _regex_extract(value: Any, pattern: str = "", **_) -> Any:
     """Extract first capture group from regex match."""
     if not isinstance(value, str) or not pattern:
         return value
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        logger.warning(f"Regex pattern too long ({len(pattern)} chars), skipping transform")
+        return value
     try:
         match = re.search(pattern, value)
         if match and match.groups():
             return match.group(1)
-    except re.error:
-        pass
+    except re.error as e:
+        logger.warning(f"Invalid regex pattern in regex_extract: {e}")
     return value
 
 
@@ -75,9 +84,13 @@ def _regex_replace(value: Any, pattern: str = "", replacement: str = "", **_) ->
     """Replace regex matches in string."""
     if not isinstance(value, str) or not pattern:
         return value
+    if len(pattern) > MAX_PATTERN_LENGTH:
+        logger.warning(f"Regex pattern too long ({len(pattern)} chars), skipping transform")
+        return value
     try:
         return re.sub(pattern, replacement, value)
-    except re.error:
+    except re.error as e:
+        logger.warning(f"Invalid regex pattern in regex_replace: {e}")
         return value
 
 
