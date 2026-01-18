@@ -279,9 +279,55 @@ def stream_records(
     file_path: Path,
     file_format: str,
     pattern: dict | None = None,
+    multiline_start: str | None = None,
+    multiline_max_lines: int = 100,
 ) -> Iterator[dict[str, Any]]:
     """Stream records from a file, optionally using custom pattern."""
     safe_path = _validate_file_path(file_path)
+
+    # For formats that work with raw lines, apply multiline merging if configured
+    if multiline_start and file_format in ("raw", "logfmt", "custom"):
+        # Read lines, merge multiline, then parse
+        with open(safe_path, "r", encoding="utf-8") as f:
+            merged_lines = merge_multiline(
+                (line for line in f),
+                multiline_start,
+                multiline_max_lines
+            )
+
+            if file_format == "custom" and pattern:
+                # Parse merged lines with pattern
+                from app.services.grok_patterns import expand_grok, safe_regex_match
+
+                if pattern["type"] == "grok":
+                    regex_str = expand_grok(pattern["pattern"])
+                else:
+                    regex_str = pattern["pattern"]
+                compiled = re.compile(regex_str)
+
+                for line in merged_lines:
+                    match = safe_regex_match(compiled, line)
+                    if match and match.groupdict():
+                        yield match.groupdict()
+                    else:
+                        yield {"raw_message": line}
+            elif file_format == "logfmt":
+                for line in merged_lines:
+                    record = {}
+                    pattern_logfmt = r'(\w+)=(?:"([^"]*)"|\'([^\']*)\'|(\S+))'
+                    for m in re.finditer(pattern_logfmt, line):
+                        key = m.group(1)
+                        value = m.group(2) or m.group(3) or m.group(4)
+                        record[key] = value
+                    if record:
+                        yield record
+                    else:
+                        yield {"raw_message": line}
+            else:  # raw
+                for line in merged_lines:
+                    yield {"raw_message": line}
+        return  # Important: return here to skip the normal processing
+
     if file_format == "custom" and pattern:
         yield from _stream_with_pattern(safe_path, pattern)
     elif file_format == "json_array":
@@ -458,10 +504,16 @@ def _stream_raw(file_path: Path) -> Iterator[dict[str, Any]]:
             yield {"raw_message": line.rstrip('\n\r')}
 
 
-def count_records(file_path: Path, file_format: str, pattern: dict | None = None) -> int:
+def count_records(
+    file_path: Path,
+    file_format: str,
+    pattern: dict | None = None,
+    multiline_start: str | None = None,
+    multiline_max_lines: int = 100,
+) -> int:
     """Count total records in a file."""
     count = 0
-    for _ in stream_records(file_path, file_format, pattern):
+    for _ in stream_records(file_path, file_format, pattern, multiline_start, multiline_max_lines):
         count += 1
     return count
 
@@ -496,6 +548,8 @@ def ingest_file(
     include_filename: bool = False,
     filename_field: str = "source_file",
     pattern: dict | None = None,
+    multiline_start: str | None = None,
+    multiline_max_lines: int = 100,
 ) -> IngestionResult:
     """
     Ingest a file into OpenSearch.
@@ -512,6 +566,8 @@ def ingest_file(
         include_filename: Whether to add source filename to each record
         filename_field: Name of the field to use for filename (default: _source_file)
         pattern: Optional pattern dict for custom format parsing
+        multiline_start: Optional regex pattern marking the start of a new record
+        multiline_max_lines: Maximum lines to merge before forcing flush (default: 100)
 
     Returns:
         IngestionResult with counts and any failed records
@@ -526,7 +582,7 @@ def ingest_file(
     failures_dir = Path(settings.data_dir) / "failures"
     failures_dir.mkdir(parents=True, exist_ok=True)
 
-    for record in stream_records(file_path, file_format, pattern):
+    for record in stream_records(file_path, file_format, pattern, multiline_start, multiline_max_lines):
         # Add source filename if requested
         if include_filename:
             record[filename_field] = file_path.name

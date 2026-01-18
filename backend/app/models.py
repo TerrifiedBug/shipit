@@ -40,6 +40,8 @@ class IngestRequest(BaseModel):
     field_types: dict[str, str] = {}
     include_filename: bool = False
     filename_field: str = "source_file"
+    multiline_start: str | None = None
+    multiline_max_lines: int = 100
 
 
 class IngestResponse(BaseModel):
