@@ -10,6 +10,20 @@ from typing import Any, Optional
 
 from app.config import settings
 
+# Column allowlists for SQL injection prevention
+ALLOWED_UPLOAD_COLUMNS = frozenset({
+    "status", "index_name", "timestamp_field", "field_mappings",
+    "excluded_fields", "error_message", "total_records", "success_count",
+    "failure_count", "started_at", "completed_at", "index_deleted",
+    "pattern_id", "multiline_start", "multiline_max_lines",
+    "upload_method", "api_key_name", "file_format"
+})
+
+ALLOWED_USER_COLUMNS = frozenset({
+    "name", "password_hash", "is_admin", "is_active", "failed_attempts",
+    "locked_until", "password_change_required", "last_login", "deleted_at"
+})
+
 
 def get_db_path() -> Path:
     """Get the path to the SQLite database file."""
@@ -323,6 +337,11 @@ def update_upload(upload_id: str, **kwargs) -> Optional[dict[str, Any]]:
     if not kwargs:
         return get_upload(upload_id)
 
+    # Validate column names against allowlist
+    for key in kwargs.keys():
+        if key not in ALLOWED_UPLOAD_COLUMNS:
+            raise ValueError(f"Invalid column: {key}")
+
     # Handle JSON serialization for dict/list fields
     if "field_mappings" in kwargs and isinstance(kwargs["field_mappings"], dict):
         kwargs["field_mappings"] = json.dumps(kwargs["field_mappings"])
@@ -582,6 +601,11 @@ def update_user(user_id: str, **kwargs) -> dict | None:
     """Update a user record with the given fields."""
     if not kwargs:
         return get_user_by_id(user_id)
+
+    # Validate column names against allowlist
+    for key in kwargs.keys():
+        if key not in ALLOWED_USER_COLUMNS:
+            raise ValueError(f"Invalid column: {key}")
 
     set_clause = ", ".join(f"{k} = ?" for k in kwargs.keys())
     values = list(kwargs.values()) + [user_id]
