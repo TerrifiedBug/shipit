@@ -71,10 +71,31 @@ function isLikelyTimestampField(fieldName: string, sampleValues: unknown[]): boo
   return sampleValues.some(looksLikeTimestamp);
 }
 
-// Helper to detect IP-like field names
-function looksLikeIp(fieldName: string): boolean {
+// IP address regex - matches IPv4 and IPv6
+const IP_PATTERN = /^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)){3}|(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4})$/;
+
+function looksLikeIpValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  const str = String(value).trim();
+  return IP_PATTERN.test(str);
+}
+
+// Helper to detect IP fields - checks both name and sample values
+function isLikelyIpField(fieldName: string, sampleValues: unknown[]): boolean {
+  // Check field name hints
   const lower = fieldName.toLowerCase();
-  return lower.includes('ip') || lower.includes('addr') || lower === 'source' || lower === 'destination';
+  const hasIpName = lower.includes('ip') || lower.includes('addr') || lower === 'source' || lower === 'destination';
+
+  // If name suggests IP, verify at least some values look like IPs
+  if (hasIpName) {
+    const validSamples = sampleValues.filter(v => v !== null && v !== undefined && String(v).trim() !== '');
+    if (validSamples.length === 0) return false;
+    // At least 50% of non-empty samples should look like IPs
+    const ipCount = validSamples.filter(looksLikeIpValue).length;
+    return ipCount >= validSamples.length * 0.5;
+  }
+
+  return false;
 }
 
 interface FieldMapping {
@@ -626,7 +647,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                       </div>
                     </td>
                     <td className="px-4 py-2">
-                      {fieldInfo?.type === 'string' && looksLikeIp(field.originalName) && geoipAvailable && (
+                      {fieldInfo?.type === 'string' && isLikelyIpField(field.originalName, data.preview.map(row => row[field.originalName])) && geoipAvailable && (
                         <label className="flex items-center gap-2 text-xs">
                           <input
                             type="checkbox"
