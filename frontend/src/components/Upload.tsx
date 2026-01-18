@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { uploadFilesWithProgress, UploadResponse } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { uploadLargeFile, CHUNKED_UPLOAD_THRESHOLD } from '../services/chunkedUpload';
 
 interface UploadProps {
   onUploadComplete: (data: UploadResponse) => void;
@@ -9,7 +10,8 @@ interface UploadProps {
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 export function Upload({ onUploadComplete }: UploadProps) {
@@ -27,11 +29,28 @@ export function Upload({ onUploadComplete }: UploadProps) {
     setUploadProgress(0);
 
     try {
-      const result = await uploadFilesWithProgress(files, (percent) => {
-        setUploadProgress(percent);
-      });
-      onUploadComplete(result);
-      addToast(files.length > 1 ? 'Files uploaded successfully' : 'File uploaded successfully', 'success');
+      // For single large file, use chunked upload
+      if (files.length === 1 && files[0].size > CHUNKED_UPLOAD_THRESHOLD) {
+        const uploadId = await uploadLargeFile(files[0], (percent) => {
+          setUploadProgress(percent);
+        });
+
+        // Fetch the upload metadata to continue with normal flow
+        const response = await fetch(`/api/upload/${uploadId}`);
+        if (!response.ok) {
+          throw new Error('Failed to get upload info');
+        }
+        const result = await response.json();
+        onUploadComplete(result);
+        addToast('Large file uploaded successfully', 'success');
+      } else {
+        // Use normal upload for small files or multiple files
+        const result = await uploadFilesWithProgress(files, (percent) => {
+          setUploadProgress(percent);
+        });
+        onUploadComplete(result);
+        addToast(files.length > 1 ? 'Files uploaded successfully' : 'File uploaded successfully', 'success');
+      }
       setSelectedFiles([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
@@ -99,7 +118,7 @@ export function Upload({ onUploadComplete }: UploadProps) {
                 />
               </svg>
               <p className="mt-4 text-lg font-medium text-gray-700 dark:text-gray-200">
-                Uploading {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''}...
+                {selectedFiles[0]?.size > CHUNKED_UPLOAD_THRESHOLD ? 'Uploading large file in chunks...' : `Uploading ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}...`}
               </p>
               {/* Progress bar */}
               <div className="mt-4 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
