@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.services.parser import detect_format, infer_fields, parse_preview
+from app.services.parser import detect_format, infer_fields, parse_preview, parse_with_pattern
 
 
 class TestDetectFormat:
@@ -227,3 +227,39 @@ class TestSyslogParser:
         records = parse_preview(file_path, "syslog", limit=10)
         assert len(records) == 1
         assert records[0] == {"message": "This is just a plain log message"}
+
+
+class TestParseWithPattern:
+    def test_parse_with_regex_pattern(self, temp_dir):
+        """Test parsing file with regex pattern."""
+        # Create test file
+        test_file = temp_dir / "test.log"
+        test_file.write_text("192.168.1.1 admin login\n10.0.0.1 guest logout\ninvalid line\n")
+
+        pattern = {
+            "type": "regex",
+            "pattern": r"(?P<ip>\d+\.\d+\.\d+\.\d+)\s+(?P<user>\w+)\s+(?P<action>\w+)"
+        }
+
+        records = parse_with_pattern(test_file, pattern, limit=100)
+
+        assert len(records) == 3
+        assert records[0] == {"ip": "192.168.1.1", "user": "admin", "action": "login"}
+        assert records[1] == {"ip": "10.0.0.1", "user": "guest", "action": "logout"}
+        assert records[2] == {"raw_message": "invalid line"}  # Non-matching line
+
+    def test_parse_with_grok_pattern(self, db, temp_dir):
+        """Test parsing file with grok pattern."""
+        test_file = temp_dir / "test.log"
+        test_file.write_text("192.168.1.1 - admin\n10.0.0.1 - guest\n")
+
+        pattern = {
+            "type": "grok",
+            "pattern": "%{IP:client_ip} - %{USER:username}"
+        }
+
+        records = parse_with_pattern(test_file, pattern, limit=100)
+
+        assert len(records) == 2
+        assert records[0]["client_ip"] == "192.168.1.1"
+        assert records[0]["username"] == "admin"

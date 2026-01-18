@@ -364,6 +364,51 @@ def _parse_raw(file_path: Path, limit: int) -> list[dict]:
     return records
 
 
+def parse_with_pattern(
+    file_path: Path,
+    pattern: dict,
+    limit: int = 100
+) -> list[dict]:
+    """Parse file line-by-line using regex or grok pattern.
+
+    Non-matching lines fallback to {"raw_message": line}.
+    """
+    from app.services.grok_patterns import expand_grok, safe_regex_match
+
+    safe_path = _validate_file_path(file_path)
+
+    # Get regex (expand if grok)
+    if pattern["type"] == "grok":
+        regex_str = expand_grok(pattern["pattern"])
+    else:
+        regex_str = pattern["pattern"]
+
+    try:
+        compiled = re.compile(regex_str)
+    except re.error as e:
+        raise ValueError(f"Invalid pattern: {e}")
+
+    records = []
+    with open(safe_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip('\n\r')
+            if not line:
+                continue
+
+            match = safe_regex_match(compiled, line)
+            if match and match.groupdict():
+                # Pattern matched — use captured groups
+                records.append(match.groupdict())
+            else:
+                # No match — fallback to raw
+                records.append({"raw_message": line})
+
+            if len(records) >= limit:
+                break
+
+    return records
+
+
 def infer_fields(records: list[dict]) -> list[dict]:
     """Infer field names and types from records."""
     if not records:
