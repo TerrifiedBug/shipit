@@ -162,6 +162,47 @@ def coerce_value(value: Any, target_type: str) -> Any:
         return None
 
 
+def merge_multiline(
+    lines: Iterator[str],
+    start_pattern: str,
+    max_lines: int = 100,
+    separator: str = "\n",
+) -> Iterator[str]:
+    """Merge lines that don't match start pattern with previous line.
+
+    Args:
+        lines: Iterator of lines to process
+        start_pattern: Regex pattern that marks start of new record
+        max_lines: Maximum lines to merge before forcing flush
+        separator: String to join merged lines
+
+    Yields:
+        Merged lines where continuation lines are joined to previous
+    """
+    compiled = re.compile(start_pattern)
+    buffer: list[str] = []
+
+    for line in lines:
+        line = line.rstrip('\n\r')
+
+        if compiled.match(line):
+            # New record starts - flush buffer
+            if buffer:
+                yield separator.join(buffer)
+            buffer = [line]
+        else:
+            # Continuation line
+            buffer.append(line)
+            if len(buffer) > max_lines:
+                # Safety limit reached - flush
+                yield separator.join(buffer)
+                buffer = []
+
+    # Flush remaining buffer
+    if buffer:
+        yield separator.join(buffer)
+
+
 def apply_field_mappings(
     record: dict[str, Any],
     field_mappings: dict[str, str],
