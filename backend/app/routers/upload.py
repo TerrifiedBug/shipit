@@ -243,6 +243,82 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
     )
 
 
+@router.get("/upload/{upload_id}", response_model=UploadResponse)
+async def get_upload(upload_id: str, request: Request = None):
+    """Get upload metadata for a completed chunked upload.
+
+    This endpoint is called after chunked upload completes to fetch
+    the parsed metadata (format, fields, preview) for the assembled file.
+    """
+    safe_id = _validate_upload_id(upload_id)
+
+    # Check if this is a completed chunked upload
+    chunked_upload = db.get_chunked_upload(safe_id)
+    if not chunked_upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    if chunked_upload["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Upload not yet completed")
+
+    # Get the assembled file path
+    filename = chunked_upload["filename"]
+    file_path = Path(settings.data_dir) / "uploads" / safe_id / filename
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Assembled file not found")
+
+    try:
+        # Detect format and parse preview
+        file_format = detect_format(file_path)
+        preview_records = parse_preview(file_path, file_format, limit=100)
+
+        # Validate field count
+        if settings.max_fields_per_document > 0:
+            is_valid, max_found = validate_field_count(preview_records, settings.max_fields_per_document)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Document contains {max_found} fields, which exceeds the maximum of {settings.max_fields_per_document}."
+                )
+
+        fields = infer_fields(preview_records)
+        raw_preview = _read_raw_lines([file_path], limit=10)
+        file_size = file_path.stat().st_size
+
+        # Create database record for history/tracking
+        user = getattr(request.state, "user", None) if request else None
+        db.create_upload(
+            upload_id=safe_id,
+            filenames=[filename],
+            file_sizes=[file_size],
+            file_format=file_format,
+            user_id=user["id"] if user else None,
+        )
+
+        # Cache file paths
+        _upload_cache[safe_id] = {
+            "file_paths": [str(file_path)],
+            "preview": preview_records,
+            "fields": fields,
+            "raw_preview": raw_preview,
+        }
+
+        return UploadResponse(
+            upload_id=safe_id,
+            filename=filename,
+            filenames=[filename],
+            file_size=file_size,
+            file_format=file_format,
+            preview=preview_records[:100],
+            fields=[FieldInfo(**f) for f in fields],
+            raw_preview=raw_preview,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process file: {str(e)}")
+
+
 @router.get("/upload/{upload_id}/preview", response_model=PreviewResponse)
 async def get_preview(upload_id: str):
     """Get preview data for previously uploaded file(s)."""

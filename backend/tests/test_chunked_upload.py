@@ -161,3 +161,64 @@ class TestChunkedUploadAPI:
         assert response.status_code == 200
         assert response.json()["status"] == "completed"
         assert "path" not in response.json()  # Should not expose internal path
+
+    def test_get_upload_after_chunked_complete(self, db, temp_dir):
+        """GET /upload/{id} should return metadata after chunked upload completes."""
+        cookies = self._login(db)
+
+        # Create chunked upload with valid NDJSON content
+        json_content = b'{"name": "test", "value": 42}\n{"name": "test2", "value": 43}'
+        file_size = len(json_content)
+
+        init_response = client.post(
+            "/api/upload/chunked/init",
+            data={"filename": "data.json", "file_size": str(file_size)},
+            cookies=cookies,
+        )
+        upload_id = init_response.json()["upload_id"]
+        total_chunks = init_response.json()["total_chunks"]
+        chunk_size = init_response.json()["chunk_size"]
+
+        # Upload all chunks
+        for i in range(total_chunks):
+            start = i * chunk_size
+            end = min(start + chunk_size, file_size)
+            chunk_data = json_content[start:end]
+            client.post(
+                f"/api/upload/chunked/{upload_id}/chunk/{i}",
+                content=chunk_data,
+                headers={"Content-Type": "application/octet-stream"},
+                cookies=cookies,
+            )
+
+        # Complete
+        complete_response = client.post(f"/api/upload/chunked/{upload_id}/complete", cookies=cookies)
+        assert complete_response.status_code == 200
+
+        # Get upload metadata
+        response = client.get(f"/api/upload/{upload_id}", cookies=cookies)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["upload_id"] == upload_id
+        assert data["filename"] == "data.json"
+        assert data["file_format"] == "ndjson"
+        assert "preview" in data
+        assert "fields" in data
+        assert len(data["preview"]) > 0
+
+    def test_get_upload_before_complete_fails(self, db, temp_dir):
+        """GET /upload/{id} should fail if chunked upload not complete."""
+        cookies = self._login(db)
+
+        init_response = client.post(
+            "/api/upload/chunked/init",
+            data={"filename": "test.json", "file_size": "1000"},
+            cookies=cookies,
+        )
+        upload_id = init_response.json()["upload_id"]
+
+        # Try to get before completing
+        response = client.get(f"/api/upload/{upload_id}", cookies=cookies)
+        assert response.status_code == 400
+        assert "not yet completed" in response.json()["detail"]
