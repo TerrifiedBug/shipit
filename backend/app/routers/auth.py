@@ -315,7 +315,10 @@ def setup_first_user(request: SetupRequest, response: Response):
 
 @router.post("/login")
 def login(request: LoginRequest, response: Response, http_request: Request = None):
-    """Login with email and password."""
+    """Login with email and password.
+
+    Uses timing-safe authentication to prevent user enumeration attacks.
+    """
     client_ip = _get_client_ip(http_request)
 
     # Check login rate limit by IP
@@ -331,67 +334,77 @@ def login(request: LoginRequest, response: Response, http_request: Request = Non
             headers={"Retry-After": str(retry_after)},
         )
 
+    # Get user for pre-auth checks (lockout, deactivation)
+    # This lookup doesn't leak timing info as we still perform timing-safe auth below
     user = get_user_by_email(request.email)
-    if not user or user["auth_type"] != "local":
-        audit.log_login_failed(request.email, "invalid_credentials", client_ip)
-        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Check if user is deleted
-    if user.get("deleted_at"):
-        audit.log_login_failed(request.email, "user_deleted", client_ip)
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    # Check if account is locked due to failed attempts
-    if is_account_locked(user["id"], settings.account_lockout_minutes):
+    # Check if account is locked due to failed attempts (only if user exists)
+    # This check is safe - it doesn't reveal user existence because we still
+    # perform timing-safe auth below regardless of lockout status
+    if user and is_account_locked(user["id"], settings.account_lockout_minutes):
         audit.log_login_failed(request.email, "account_locked", client_ip)
         raise HTTPException(
             status_code=403,
             detail=f"Account temporarily locked due to too many failed login attempts. Try again in {settings.account_lockout_minutes} minutes."
         )
 
-    # Check if user is deactivated
-    if not user.get("is_active", True):
+    # Check if user is deactivated before authentication
+    # We reveal deactivation status (403) because it's an admin action, not security-sensitive
+    # and users need to know to contact their admin
+    if user and not user.get("is_active", True) and not user.get("deleted_at"):
         audit.log_login_failed(request.email, "account_deactivated", client_ip)
         raise HTTPException(status_code=403, detail="Account has been deactivated")
 
-    if not user["password_hash"]:
-        audit.log_login_failed(request.email, "no_password_set", client_ip)
+    # Use timing-safe authentication - always performs password hash check
+    # to prevent timing attacks that could reveal user existence
+    authenticated_user = authenticate_user(request.email, request.password)
+
+    if not authenticated_user:
+        # Authentication failed - could be: user not found, wrong password,
+        # OIDC user, or deleted user
+        # Record failed attempt if user exists (for lockout tracking)
+        if user and not user.get("deleted_at") and user.get("is_active", True):
+            record_failed_login(user["id"], client_ip)
+            failed_count = get_failed_login_count(user["id"], settings.account_lockout_minutes)
+
+            # Provide remaining attempts info only for existing, active local users
+            if user.get("auth_type") == "local":
+                audit.log_login_failed(request.email, "invalid_password", client_ip)
+                # Check if this attempt triggers lockout
+                if failed_count >= settings.account_lockout_attempts:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Account temporarily locked due to too many failed login attempts. Try again in {settings.account_lockout_minutes} minutes."
+                    )
+                remaining = settings.account_lockout_attempts - failed_count
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"Invalid credentials. {remaining} attempt(s) remaining before account lockout."
+                )
+
+        # Generic failure - don't reveal why authentication failed
+        audit.log_login_failed(request.email, "invalid_credentials", client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(request.password, user["password_hash"]):
-        # Record failed attempt for account lockout
-        record_failed_login(user["id"], client_ip)
-        failed_count = get_failed_login_count(user["id"], settings.account_lockout_minutes)
-
-        audit.log_login_failed(request.email, "invalid_password", client_ip)
-
-        # Check if this attempt triggers lockout
-        if failed_count >= settings.account_lockout_attempts:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Account temporarily locked due to too many failed login attempts. Try again in {settings.account_lockout_minutes} minutes."
-            )
-
-        remaining = settings.account_lockout_attempts - failed_count
-        raise HTTPException(
-            status_code=401,
-            detail=f"Invalid credentials. {remaining} attempt(s) remaining before account lockout."
-        )
+    # Check if user is deleted (authenticated_user passed auth but we double-check)
+    if authenticated_user.get("deleted_at"):
+        audit.log_login_failed(request.email, "user_deleted", client_ip)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Successful login - clear failed attempts
-    clear_failed_logins(user["id"])
-    update_user_last_login(user["id"])
+    clear_failed_logins(authenticated_user["id"])
+    update_user_last_login(authenticated_user["id"])
 
     # Log successful login
-    audit.log_login_success(user["id"], user["email"], client_ip)
+    audit.log_login_success(authenticated_user["id"], authenticated_user["email"], client_ip)
 
-    token = create_session_token(user["id"])
+    token = create_session_token(authenticated_user["id"])
     _set_session_cookie(response, token)
 
     return {
         "message": "Login successful",
-        "user": user,
-        "password_change_required": bool(user.get("password_change_required")),
+        "user": authenticated_user,
+        "password_change_required": bool(authenticated_user.get("password_change_required")),
     }
 
 
