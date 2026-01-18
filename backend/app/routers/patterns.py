@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -14,6 +16,7 @@ from app.services.grok_patterns import (
     parse_with_grok,
     safe_regex_match,
     RegexTimeoutError,
+    expand_grok,
 )
 
 router = APIRouter(prefix="/api/patterns", tags=["patterns"])
@@ -192,6 +195,21 @@ async def list_builtin_grok_patterns(
     """List all built-in grok patterns."""
     patterns = list_builtin_patterns()
     return [BuiltinGrokPattern(**p) for p in patterns]
+
+
+@router.get("/grok/expand")
+async def expand_grok_pattern(
+    pattern: str,
+    user: dict = Depends(require_auth),
+) -> dict:
+    """Expand a grok pattern to regex for client-side matching."""
+    try:
+        expanded = expand_grok(pattern)
+        # Extract named groups from the expanded regex
+        groups = re.findall(r'\?P<(\w+)>', expanded)
+        return {"expanded": expanded, "groups": groups, "valid": True}
+    except ValueError as e:
+        return {"expanded": None, "groups": [], "valid": False, "error": str(e)}
 
 
 @router.get("/grok")
