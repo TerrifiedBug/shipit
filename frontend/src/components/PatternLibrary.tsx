@@ -5,7 +5,6 @@ import {
   GrokPatternCreate,
   Pattern,
   PatternCreate,
-  PatternTestResponse,
   createGrokPattern,
   createPattern,
   deleteGrokPattern,
@@ -13,11 +12,12 @@ import {
   listBuiltinGrokPatterns,
   listGrokPatterns,
   listPatterns,
-  testPattern,
   updateGrokPattern,
   updatePattern,
 } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { HighlightedInput, GROUP_COLORS, Highlight } from './HighlightedInput';
+import { usePatternMatch } from '../hooks/usePatternMatch';
 
 interface PatternLibraryProps {
   onClose: () => void;
@@ -673,8 +673,20 @@ function PatternModal({
   const [testSample, setTestSample] = useState(pattern?.test_sample || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<PatternTestResponse | null>(null);
-  const { addToast } = useToast();
+
+  // Live pattern matching
+  const { result: matchResult, error: matchError, loading: matchLoading } = usePatternMatch(
+    patternStr,
+    testSample,
+    type
+  );
+
+  // Convert match result to highlights
+  const highlights: Highlight[] = matchResult?.groups.map((group, idx) => ({
+    start: group.start,
+    end: group.end,
+    colorIndex: idx,
+  })) || [];
 
   // Track if form has unsaved changes
   const isDirty =
@@ -689,28 +701,6 @@ function PatternModal({
       return;
     }
     onClose();
-  };
-
-  const handleTest = async () => {
-    if (!patternStr || !testSample) {
-      addToast('Enter both pattern and test sample', 'error');
-      return;
-    }
-
-    try {
-      const result = await testPattern({
-        pattern: patternStr,
-        pattern_type: type,
-        test_text: testSample,
-      });
-      setTestResult(result);
-    } catch (err) {
-      setTestResult({
-        success: false,
-        matches: null,
-        error: err instanceof Error ? err.message : 'Test failed',
-      });
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -817,55 +807,58 @@ function PatternModal({
             />
           </div>
 
+          {/* Test Sample with Live Highlighting */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Test Sample (optional)
+              Test Sample
+              {matchLoading && (
+                <span className="ml-2 text-xs text-gray-500">(matching...)</span>
+              )}
             </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={testSample}
-                onChange={(e) => setTestSample(e.target.value)}
-                placeholder="192.168.1.1 - admin [17/Jan/2026:10:00:00 +0000]"
-                className="flex-1 px-3 py-2 font-mono text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-              <button
-                type="button"
-                onClick={handleTest}
-                className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/30"
-              >
-                Test
-              </button>
-            </div>
+            <HighlightedInput
+              value={testSample}
+              onChange={setTestSample}
+              highlights={highlights}
+              placeholder="192.168.1.1 - admin [17/Jan/2026:10:00:00 +0000]"
+              rows={2}
+            />
           </div>
 
-          {testResult && (
-            <div
-              className={`p-3 rounded-md ${
-                testResult.success
-                  ? 'bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200'
-                  : 'bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-200'
-              }`}
-            >
-              {testResult.success ? (
-                <div>
-                  <p className="font-medium">Match successful!</p>
-                  {testResult.matches && Object.keys(testResult.matches).length > 0 && (
-                    <div className="mt-2 text-sm">
-                      <p className="font-medium">Captured fields:</p>
-                      <ul className="mt-1 space-y-1">
-                        {Object.entries(testResult.matches).map(([key, value]) => (
-                          <li key={key} className="font-mono">
-                            <span className="text-blue-600 dark:text-blue-400">{key}</span>: {value}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p>{testResult.error || 'Pattern did not match'}</p>
-              )}
+          {/* Match Results Legend */}
+          {matchResult && matchResult.groups.length > 0 && (
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Captured Groups
+              </label>
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-3 space-y-2">
+                {matchResult.groups.map((group, idx) => (
+                  <div key={group.name} className="flex items-center gap-2 text-sm">
+                    <span
+                      className={`w-3 h-3 rounded ${GROUP_COLORS[idx % GROUP_COLORS.length]}`}
+                    />
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      {group.name}:
+                    </span>
+                    <code className="text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded">
+                      {group.value}
+                    </code>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* No match indicator */}
+          {testSample && patternStr && !matchResult && !matchError && !matchLoading && (
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Pattern does not match the test sample
+            </div>
+          )}
+
+          {/* Error display */}
+          {matchError && (
+            <div className="text-sm text-red-600 dark:text-red-400">
+              {matchError}
             </div>
           )}
 
