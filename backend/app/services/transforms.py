@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import logging
 import re
 import urllib.parse
@@ -25,7 +26,8 @@ def apply_transform(value: Any, transform_name: str, **options) -> Any:
     Returns:
         Transformed value, or original value if transform doesn't apply
     """
-    if value is None:
+    # Special handling for transforms that need to process None values
+    if value is None and transform_name not in ("default", "hash_sha256"):
         return None
 
     transform_fn = TRANSFORMS.get(transform_name)
@@ -121,6 +123,52 @@ def _url_decode(value: Any, **_) -> Any:
     return urllib.parse.unquote(value)
 
 
+def _hash_sha256(value: Any, **_) -> Any:
+    """Hash value with SHA256."""
+    if value is None:
+        return value
+    return hashlib.sha256(str(value).encode()).hexdigest()
+
+
+def _mask_email(value: Any, **_) -> Any:
+    """Mask email address, keeping first char and domain extension."""
+    if not isinstance(value, str) or "@" not in value:
+        return value
+
+    local, domain = value.rsplit("@", 1)
+    domain_parts = domain.rsplit(".", 1)
+
+    masked_local = local[0] + "****" if local else "****"
+
+    if len(domain_parts) == 2:
+        masked_domain = domain_parts[0][0] + "******." + domain_parts[1]
+    else:
+        masked_domain = domain[0] + "******"
+
+    return f"{masked_local}@{masked_domain}"
+
+
+def _mask_ip(value: Any, **_) -> Any:
+    """Mask IP address last octet."""
+    if not isinstance(value, str):
+        return value
+
+    # IPv4
+    ipv4_pattern = re.compile(r'^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$')
+    match = ipv4_pattern.match(value)
+    if match:
+        return f"{match.group(1)}.x"
+
+    return value
+
+
+def _default(value: Any, default_value: str = "", **_) -> Any:
+    """Replace None or empty string with default value."""
+    if value is None or value == "":
+        return default_value
+    return value
+
+
 TRANSFORMS = {
     "lowercase": _lowercase,
     "uppercase": _uppercase,
@@ -130,4 +178,8 @@ TRANSFORMS = {
     "truncate": _truncate,
     "base64_decode": _base64_decode,
     "url_decode": _url_decode,
+    "hash_sha256": _hash_sha256,
+    "mask_email": _mask_email,
+    "mask_ip": _mask_ip,
+    "default": _default,
 }

@@ -126,3 +126,37 @@ class TestEncodingTransforms:
         """url_decode should decode URL-encoded strings."""
         result = apply_transform("hello%20world%21", "url_decode")
         assert result == "hello world!"
+
+
+class TestSecurityTransforms:
+    def test_hash_sha256(self):
+        """hash_sha256 should return SHA256 hash."""
+        result = apply_transform("secret", "hash_sha256")
+        assert result == "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"
+
+    def test_mask_email(self):
+        """mask_email should mask middle of email."""
+        result = apply_transform("danny@example.com", "mask_email")
+        assert result == "d****@e******.com"
+
+    def test_mask_ip(self):
+        """mask_ip should mask last octet."""
+        result = apply_transform("192.168.1.50", "mask_ip")
+        assert result == "192.168.1.x"
+
+
+class TestConditionalTransforms:
+    def test_default_replaces_none(self):
+        """default should replace None values."""
+        result = apply_transform(None, "default", default_value="unknown")
+        assert result == "unknown"
+
+    def test_default_keeps_existing(self):
+        """default should keep existing values."""
+        result = apply_transform("actual", "default", default_value="unknown")
+        assert result == "actual"
+
+    def test_default_replaces_empty_string(self):
+        """default should replace empty strings."""
+        result = apply_transform("", "default", default_value="unknown")
+        assert result == "unknown"
