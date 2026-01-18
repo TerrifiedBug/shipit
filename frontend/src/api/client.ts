@@ -609,7 +609,8 @@ export async function getAppSettings(): Promise<AppSettings> {
 export async function reparseUpload(
   uploadId: string,
   format: FileFormat | 'custom',
-  patternId?: string
+  patternId?: string,
+  multilineStart?: string,
 ): Promise<{
   upload_id: string;
   file_format: string;
@@ -621,6 +622,9 @@ export async function reparseUpload(
   formData.append('format', format);
   if (patternId) {
     formData.append('pattern_id', patternId);
+  }
+  if (multilineStart) {
+    formData.append('multiline_start', multilineStart);
   }
 
   const response = await fetch(`${API_BASE}/api/upload/${uploadId}/reparse`, {

@@ -60,6 +60,13 @@ function FieldBadge({ field }: { field: FieldInfo }) {
   );
 }
 
+const MULTILINE_PRESETS = [
+  { label: 'Timestamp (ISO)', value: '^\\d{4}-\\d{2}-\\d{2}' },
+  { label: 'Timestamp (Syslog)', value: '^[A-Z][a-z]{2}\\s+\\d+' },
+  { label: 'Non-whitespace start', value: '^\\S' },
+  { label: 'Custom...', value: '' },
+];
+
 export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps) {
   const { filename, file_size, file_format, preview, fields, upload_id } = data;
   const [selectedFormat, setSelectedFormat] = useState<FileFormat | 'custom'>(file_format);
@@ -67,6 +74,8 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [selectedPatternId, setSelectedPatternId] = useState<string | null>(null);
   const [showPatternModal, setShowPatternModal] = useState(false);
+  const [multilineEnabled, setMultilineEnabled] = useState(false);
+  const [multilineStart, setMultilineStart] = useState('');
   const { addToast } = useToast();
 
   // Load patterns when custom format is selected
@@ -152,6 +161,31 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
     await handlePatternChange(pattern.id);
   };
 
+  const handleReparse = async () => {
+    setIsReparsing(true);
+    try {
+      const result = await reparseUpload(
+        upload_id,
+        selectedFormat,
+        selectedPatternId || undefined,
+        multilineEnabled ? multilineStart : undefined
+      );
+      if (onDataUpdate) {
+        onDataUpdate({
+          ...data,
+          file_format: result.file_format as FileFormat,
+          preview: result.preview,
+          fields: result.fields,
+        });
+      }
+      addToast('Preview updated', 'success');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Failed to reparse', 'error');
+    } finally {
+      setIsReparsing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* File info header */}
@@ -215,6 +249,56 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
             Upload Different File
           </button>
         </div>
+
+        {/* Multiline toggle - only for raw/logfmt/custom */}
+        {['raw', 'logfmt', 'custom'].includes(selectedFormat) && (
+          <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={multilineEnabled}
+                onChange={(e) => setMultilineEnabled(e.target.checked)}
+                className="rounded"
+              />
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Multi-line mode</span>
+            </label>
+
+            {multilineEnabled && (
+              <div className="mt-2 space-y-2">
+                <select
+                  value={MULTILINE_PRESETS.find(p => p.value === multilineStart)?.value ?? ''}
+                  onChange={(e) => setMultilineStart(e.target.value)}
+                  className="w-full px-2 py-1 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  <option value="">Select pattern...</option>
+                  {MULTILINE_PRESETS.map(preset => (
+                    <option key={preset.label} value={preset.value}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+
+                {!MULTILINE_PRESETS.find(p => p.value === multilineStart) && multilineStart && (
+                  <input
+                    type="text"
+                    value={multilineStart}
+                    onChange={(e) => setMultilineStart(e.target.value)}
+                    placeholder="^\\d{4}-\\d{2}-\\d{2}"
+                    className="w-full px-2 py-1 text-sm font-mono border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  />
+                )}
+
+                <button
+                  onClick={() => handleReparse()}
+                  disabled={!multilineStart || isReparsing}
+                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded disabled:opacity-50 hover:bg-blue-700"
+                >
+                  Apply
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Detected fields */}
