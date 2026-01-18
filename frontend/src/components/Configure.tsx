@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   cancelIngest,
   FieldInfo,
@@ -7,6 +7,7 @@ import {
   ProgressEvent,
   startIngest,
   subscribeToProgress,
+  suggestEcs,
   UploadResponse,
 } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
@@ -70,6 +71,12 @@ function isLikelyTimestampField(fieldName: string, sampleValues: unknown[]): boo
   return sampleValues.some(looksLikeTimestamp);
 }
 
+// Helper to detect IP-like field names
+function looksLikeIp(fieldName: string): boolean {
+  const lower = fieldName.toLowerCase();
+  return lower.includes('ip') || lower.includes('addr') || lower === 'source' || lower === 'destination';
+}
+
 interface FieldMapping {
   originalName: string;
   mappedName: string;
@@ -113,6 +120,11 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   });
   const [fieldTransforms, setFieldTransforms] = useState<Record<string, FieldTransform[]>>({});
 
+  // GeoIP and ECS mapping state
+  const [geoipFields, setGeoipFields] = useState<string[]>([]);
+  const [geoipAvailable, setGeoipAvailable] = useState(false);
+  const [ecsSuggestions, setEcsSuggestions] = useState<Record<string, string>>({});
+
   const setFieldType = (fieldName: string, type: string) => {
     setFieldTypes(prev => ({ ...prev, [fieldName]: type }));
   };
@@ -139,6 +151,20 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
       )
     }));
   };
+
+  // Fetch ECS suggestions on mount
+  useEffect(() => {
+    if (data.upload_id) {
+      suggestEcs(data.upload_id)
+        .then((response) => {
+          setGeoipAvailable(response.geoip_available);
+          setEcsSuggestions(response.suggestions);
+        })
+        .catch((err) => {
+          console.warn('Failed to fetch ECS suggestions:', err);
+        });
+    }
+  }, [data.upload_id]);
 
   // Track if form has been modified
   const isDirty = useMemo(() => {
@@ -242,6 +268,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
         field_transforms: Object.keys(transforms).length > 0 ? transforms : undefined,
         include_filename: includeFilename,
         filename_field: filenameField,
+        geoip_fields: geoipFields.length > 0 ? geoipFields : undefined,
       });
 
       // Subscribe to progress updates via SSE
@@ -471,9 +498,27 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
 
       {/* Field Mapping */}
       <div className={`bg-white dark:bg-gray-800 shadow rounded-lg p-6 ${isIngesting ? 'opacity-50 pointer-events-none' : ''}`}>
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-          Field Mapping ({activeFields.length} of {fieldMappings.length} fields)
-        </h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+            Field Mapping ({activeFields.length} of {fieldMappings.length} fields)
+          </h3>
+          <button
+            onClick={() => {
+              // Apply ECS suggestions to field mappings
+              setFieldMappings(prev =>
+                prev.map(f => ({
+                  ...f,
+                  mappedName: ecsSuggestions[f.originalName] || f.mappedName,
+                }))
+              );
+              addToast(`Applied ${Object.keys(ecsSuggestions).length} ECS mappings`, 'success');
+            }}
+            disabled={Object.keys(ecsSuggestions).length === 0 || isIngesting}
+            className="px-3 py-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-600 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Apply ECS Mapping ({Object.keys(ecsSuggestions).length})
+          </button>
+        </div>
 
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -490,6 +535,9 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                   Transforms
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                  Enrich
                 </th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                   Exclude
@@ -576,6 +624,26 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                           ))}
                         </select>
                       </div>
+                    </td>
+                    <td className="px-4 py-2">
+                      {fieldInfo?.type === 'string' && looksLikeIp(field.originalName) && geoipAvailable && (
+                        <label className="flex items-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={geoipFields.includes(field.originalName)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setGeoipFields([...geoipFields, field.originalName]);
+                              } else {
+                                setGeoipFields(geoipFields.filter(f => f !== field.originalName));
+                              }
+                            }}
+                            disabled={field.excluded || isIngesting}
+                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-gray-600 rounded"
+                          />
+                          <span className="text-gray-700 dark:text-gray-300">GeoIP</span>
+                        </label>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-center">
                       <input

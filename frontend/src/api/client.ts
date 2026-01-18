@@ -263,6 +263,7 @@ export interface IngestRequest {
   field_transforms?: Record<string, FieldTransform[]>;
   include_filename?: boolean;
   filename_field?: string;
+  geoip_fields?: string[];
 }
 
 export interface IngestResponse {
@@ -437,6 +438,24 @@ export async function deletePendingUpload(uploadId: string): Promise<void> {
   if (!response.ok) {
     console.warn('Failed to delete pending upload:', uploadId);
   }
+}
+
+// ECS suggestion types and functions
+export interface EcsSuggestResponse {
+  suggestions: Record<string, string>;
+  geoip_available: boolean;
+}
+
+export async function suggestEcs(uploadId: string): Promise<EcsSuggestResponse> {
+  const response = await fetch(`${API_BASE}/api/upload/${uploadId}/suggest-ecs`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get ECS suggestions');
+  }
+  return response.json();
 }
 
 // Admin user management types and functions
