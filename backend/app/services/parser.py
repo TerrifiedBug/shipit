@@ -194,7 +194,10 @@ def _parse_ndjson(file_path: Path, limit: int) -> list[dict]:
 
 
 def _parse_csv(file_path: Path, limit: int) -> list[dict]:
-    """Parse CSV with auto-detected delimiter."""
+    """Parse CSV with auto-detected delimiter.
+
+    Raises ValueError if content doesn't look like valid CSV.
+    """
     with open(file_path, "r", encoding="utf-8", newline="") as f:
         # Sniff delimiter from first 8KB
         sample = f.read(8192)
@@ -208,6 +211,21 @@ def _parse_csv(file_path: Path, limit: int) -> list[dict]:
 
         reader = csv.DictReader(f, dialect=dialect)
         records = []
+        fieldnames = reader.fieldnames or []
+
+        # Validate: CSV should have multiple columns, or if single column,
+        # the header should be a reasonable field name (not a long log line)
+        if len(fieldnames) == 1:
+            header = fieldnames[0]
+            # If the "header" is very long or contains multiple spaces,
+            # it's likely a log line, not a CSV header
+            if len(header) > 50 or header.count(' ') > 3:
+                raise ValueError(
+                    "Content doesn't appear to be valid CSV. "
+                    "Single-column detected with log-like content. "
+                    "Try 'Raw Lines' or 'Logfmt' format instead."
+                )
+
         for row in reader:
             records.append(dict(row))
             if len(records) >= limit:
@@ -219,6 +237,7 @@ def _parse_tsv(file_path: Path, limit: int) -> list[dict]:
     """Parse tab-separated values.
 
     Handles both actual tabs and multiple spaces as delimiters.
+    Raises ValueError if content doesn't look like valid TSV.
     """
     with open(file_path, "r", encoding="utf-8", newline="") as f:
         # Read first line to detect delimiter
@@ -228,6 +247,24 @@ def _parse_tsv(file_path: Path, limit: int) -> list[dict]:
         # Check if actual tabs exist
         if '\t' in first_line:
             reader = csv.DictReader(f, delimiter='\t')
+            fieldnames = reader.fieldnames or []
+
+            # Validate: TSV should have multiple columns
+            if len(fieldnames) == 1:
+                header = fieldnames[0]
+                if len(header) > 50 or header.count(' ') > 3:
+                    raise ValueError(
+                        "Content doesn't appear to be valid TSV. "
+                        "No tab delimiters found. "
+                        "Try 'Raw Lines' or 'Logfmt' format instead."
+                    )
+
+            records = []
+            for row in reader:
+                records.append(dict(row))
+                if len(records) >= limit:
+                    break
+            return records
         else:
             # Fall back to splitting on 2+ spaces
             lines = f.readlines()
@@ -236,6 +273,16 @@ def _parse_tsv(file_path: Path, limit: int) -> list[dict]:
 
             # Parse header
             header = re.split(r'\s{2,}', lines[0].strip())
+
+            # Validate: need multiple columns from 2+ space splitting
+            if len(header) == 1:
+                if len(header[0]) > 50 or header[0].count(' ') > 3:
+                    raise ValueError(
+                        "Content doesn't appear to be valid TSV. "
+                        "No tab or multi-space delimiters found. "
+                        "Try 'Raw Lines' or 'Logfmt' format instead."
+                    )
+
             records = []
             for line in lines[1:]:
                 line = line.strip()
@@ -250,13 +297,6 @@ def _parse_tsv(file_path: Path, limit: int) -> list[dict]:
                 if len(records) >= limit:
                     break
             return records
-
-        records = []
-        for row in reader:
-            records.append(dict(row))
-            if len(records) >= limit:
-                break
-        return records
 
 
 def _parse_ltsv(file_path: Path, limit: int) -> list[dict]:

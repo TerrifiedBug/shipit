@@ -80,15 +80,18 @@ function UserMenu() {
                 <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                   {user.email}
                 </div>
-                <button
-                  onClick={() => {
-                    setShowPasswordChange(true);
-                    setIsOpen(false);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  Change Password
-                </button>
+                {/* Only show password change for local users, not OIDC */}
+                {user.auth_type === 'local' && (
+                  <button
+                    onClick={() => {
+                      setShowPasswordChange(true);
+                      setIsOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Change Password
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     logout();
@@ -223,23 +226,27 @@ function App() {
       <header className="bg-white dark:bg-gray-800 shadow">
         <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+              title="Return to upload"
+            >
               <span className="text-3xl" role="img" aria-label="ShipIt logo">🚀</span>
               <div className="flex items-baseline gap-2">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">ShipIt</h1>
                 <span className="text-xs text-gray-400 dark:text-gray-500">v{currentVersion}</span>
-                {updateAvailable && releaseUrl && (
-                  <a
-                    href={releaseUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-blue-500 hover:text-blue-600 hover:underline"
-                  >
-                    Update available
-                  </a>
-                )}
               </div>
-            </div>
+            </button>
+            {updateAvailable && releaseUrl && (
+              <a
+                href={releaseUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-500 hover:text-blue-600 hover:underline ml-2"
+              >
+                Update available
+              </a>
+            )}
             <div className="flex items-center gap-2">
               <ThemeToggle />
               {user?.is_admin ? (

@@ -22,6 +22,7 @@ class UploadResponse(BaseModel):
     file_format: FileFormat
     preview: list[dict[str, Any]]
     fields: list[FieldInfo]
+    raw_preview: list[str] = []  # Raw lines for pattern testing
 
 
 class PreviewResponse(BaseModel):
@@ -30,6 +31,7 @@ class PreviewResponse(BaseModel):
     file_format: FileFormat
     preview: list[dict[str, Any]]
     fields: list[FieldInfo]
+    raw_preview: list[str] = []  # Raw lines for pattern testing
 
 
 class IngestRequest(BaseModel):

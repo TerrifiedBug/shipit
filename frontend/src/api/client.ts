@@ -6,6 +6,7 @@ export interface User {
   email: string;
   name: string;
   is_admin: number;
+  auth_type: 'local' | 'oidc';
   password_change_required?: boolean;
 }
 
@@ -161,6 +162,7 @@ export interface UploadResponse {
   file_format: FileFormat;
   preview: Record<string, unknown>[];
   fields: FieldInfo[];
+  raw_preview: string[];  // Raw lines for pattern testing
 }
 
 export interface PreviewResponse {
@@ -617,6 +619,7 @@ export async function reparseUpload(
   pattern_id: string | null;
   preview: Record<string, unknown>[];
   fields: FieldInfo[];
+  raw_preview: string[];
 }> {
   const formData = new FormData();
   formData.append('format', format);

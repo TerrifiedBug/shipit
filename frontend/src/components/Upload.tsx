@@ -150,7 +150,7 @@ export function Upload({ onUploadComplete }: UploadProps) {
                   </label>
                 </p>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Supports JSON, NDJSON, CSV, TSV, LTSV, and Syslog formats
+                  Supports JSON, NDJSON, CSV, TSV, LTSV, Syslog, and custom Regex/Grok patterns
                 </p>
               </div>
             </>

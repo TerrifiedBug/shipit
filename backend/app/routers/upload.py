@@ -87,6 +87,27 @@ def _get_client_ip(request: Request | None) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _read_raw_lines(file_paths: list[Path], limit: int = 10) -> list[str]:
+    """Read raw lines from files for pattern testing.
+
+    Reads up to `limit` lines from the first file.
+    """
+    if not file_paths:
+        return []
+
+    raw_lines: list[str] = []
+    # Read from first file only for pattern testing
+    try:
+        with open(file_paths[0], "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                raw_lines.append(line.rstrip('\n\r'))
+                if len(raw_lines) >= limit:
+                    break
+    except Exception:
+        pass
+    return raw_lines
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_files(files: list[UploadFile] = File(...), request: Request = None):
     """Upload one or more files and return preview data."""
@@ -191,6 +212,9 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
 
         fields = infer_fields(preview_records)
 
+        # Read raw lines for pattern testing
+        raw_preview = _read_raw_lines(saved_files, limit=10)
+
         # Create database record (use sanitized filenames)
         user = getattr(request.state, "user", None) if request else None
         db.create_upload(
@@ -206,6 +230,7 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
             "file_paths": [str(fp) for fp in saved_files],
             "preview": preview_records,
             "fields": fields,
+            "raw_preview": raw_preview,
         }
     except HTTPException:
         # Clean up on error
@@ -223,6 +248,7 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
         file_format=file_format,
         preview=preview_records[:100],  # Limit preview in response
         fields=[FieldInfo(**f) for f in fields],
+        raw_preview=raw_preview,
     )
 
 
@@ -239,6 +265,8 @@ async def get_preview(upload_id: str):
     if cache:
         preview = cache["preview"]
         fields = cache["fields"]
+        raw_preview = cache.get("raw_preview", [])
+        file_paths = [Path(fp) for fp in cache.get("file_paths", [])]
     else:
         # Re-parse if not in cache (e.g., after server restart)
         # Files are stored in a subdirectory named by upload_id
@@ -258,7 +286,7 @@ async def get_preview(upload_id: str):
             if file_path.exists():
                 records = parse_preview(file_path, upload["file_format"], limit=preview_limit)
                 preview.extend(records)
-                file_paths.append(str(file_path))
+                file_paths.append(file_path)
 
         if not file_paths:
             raise HTTPException(status_code=404, detail="Uploaded files no longer exist")
@@ -274,10 +302,12 @@ async def get_preview(upload_id: str):
                 )
 
         fields = infer_fields(preview)
+        raw_preview = _read_raw_lines(file_paths, limit=10)
         _upload_cache[safe_id] = {
-            "file_paths": file_paths,
+            "file_paths": [str(fp) for fp in file_paths],
             "preview": preview,
             "fields": fields,
+            "raw_preview": raw_preview,
         }
 
     return PreviewResponse(
@@ -286,6 +316,7 @@ async def get_preview(upload_id: str):
         file_format=upload["file_format"],
         preview=preview[:100],
         fields=[FieldInfo(**f) for f in fields],
+        raw_preview=raw_preview,
     )
 
 
@@ -371,6 +402,12 @@ async def reparse_upload(
 
         fields = infer_fields(combined_preview)
 
+        # Get or read raw_preview
+        cache = _upload_cache.get(safe_id)
+        raw_preview = cache.get("raw_preview", []) if cache else []
+        if not raw_preview:
+            raw_preview = _read_raw_lines(existing_paths, limit=10)
+
         # Update upload record with new format
         db.update_upload(safe_id, file_format=format, pattern_id=pattern_id, multiline_start=multiline_start)
 
@@ -379,6 +416,7 @@ async def reparse_upload(
             "file_paths": [str(fp) for fp in existing_paths],
             "preview": combined_preview,
             "fields": fields,
+            "raw_preview": raw_preview,
         }
 
         return {
@@ -388,6 +426,7 @@ async def reparse_upload(
             "multiline_start": multiline_start,
             "preview": combined_preview[:100],
             "fields": [{"name": f["name"], "type": f["type"]} for f in fields],
+            "raw_preview": raw_preview,
         }
     except HTTPException:
         raise
