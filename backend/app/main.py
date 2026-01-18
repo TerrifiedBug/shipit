@@ -26,11 +26,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/api/auth/callback",
     }
 
+    def _is_public_path(self, path: str) -> bool:
+        """Check if path is public (doesn't require authentication)."""
+        if path in self.PUBLIC_PATHS:
+            return True
+        # Allow abandon endpoint for page unload cleanup
+        # (UUID is unguessable, only deletes pending uploads)
+        if path.startswith("/api/upload/") and path.endswith("/abandon"):
+            return True
+        return False
+
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
         # Allow public paths
-        if path in self.PUBLIC_PATHS or not path.startswith("/api/"):
+        if self._is_public_path(path) or not path.startswith("/api/"):
             return await call_next(request)
 
         # Check authentication
