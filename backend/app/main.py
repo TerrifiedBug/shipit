@@ -13,6 +13,13 @@ from app.services.database import init_db
 from app.services.geoip import init_geoip
 from app.services.retention import start_retention_task, stop_retention_task
 
+# Configure logging based on LOG_LEVEL setting
+log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+logging.basicConfig(
+    level=log_level,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
 

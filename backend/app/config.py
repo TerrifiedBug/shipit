@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     maxmind_license_key: str | None = None
     geoip_auto_update_days: int = 7  # Auto-update interval (0 to disable, MaxMind updates weekly)
 
+    # Logging
+    log_level: str = "info"  # debug, info, warning, error
+
     class Config:
         env_file = ".env"
 

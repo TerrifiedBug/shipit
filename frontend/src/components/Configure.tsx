@@ -42,11 +42,10 @@ const INDEX_PREFIX = 'shipit-';
 // Keywords that suggest a field is a timestamp (must be whole words or clear suffixes)
 const TIMESTAMP_KEYWORDS = ['time', 'date', 'created', 'updated', 'timestamp', 'datetime', 'createdat', 'updatedat', 'startedat', 'endedat'];
 
-// Patterns that look like timestamps
+// Patterns that look like timestamps (string formats only - numeric epochs handled separately)
 const TIMESTAMP_PATTERNS = [
   /^\d{4}-\d{2}-\d{2}/, // ISO date start (2024-01-15)
   /^\d{2}\/\w{3}\/\d{4}/, // Nginx/Apache CLF (15/Jan/2024)
-  /^\d{10,13}$/, // Epoch seconds or milliseconds
   /T\d{2}:\d{2}/, // ISO datetime contains T00:00
   /^\d{4}\/\d{2}\/\d{2}/, // Slash date (2024/01/15)
   /^\w{3}\s+\d{1,2},?\s+\d{4}/, // Month day year (Jan 15, 2024)
@@ -55,10 +54,31 @@ const TIMESTAMP_PATTERNS = [
 function looksLikeTimestamp(value: unknown): boolean {
   if (value === null || value === undefined) return false;
 
-  // Check if it's an epoch number
-  if (typeof value === 'number' && value > 1000000000) return true;
+  // Numeric values: must be in valid epoch range (year 2001 to 2100)
+  // This prevents false positives from fields like Duration, ContentSize, Status codes
+  if (typeof value === 'number') {
+    // Epoch seconds: 1000000000 (Sep 2001) to 4102444800 (Jan 2100)
+    // Epoch milliseconds: 1000000000000 (Sep 2001) to 4102444800000 (Jan 2100)
+    const isEpochSeconds = value >= 1000000000 && value < 4102444800;
+    const isEpochMillis = value >= 1000000000000 && value < 4102444800000;
+    return isEpochSeconds || isEpochMillis;
+  }
 
-  const str = String(value);
+  const str = String(value).trim();
+  if (!str) return false;
+
+  // Reject pure numeric strings that are too short (< 10 digits) or too long (> 13 digits)
+  // This prevents matching HTTP status codes (200), content sizes, etc.
+  if (/^\d+$/.test(str)) {
+    const len = str.length;
+    if (len < 10 || len > 13) return false;
+    // Also check the numeric range for string epochs
+    const num = parseInt(str, 10);
+    const isEpochSeconds = num >= 1000000000 && num < 4102444800;
+    const isEpochMillis = num >= 1000000000000 && num < 4102444800000;
+    return isEpochSeconds || isEpochMillis;
+  }
+
   return TIMESTAMP_PATTERNS.some(pattern => pattern.test(str));
 }
 
