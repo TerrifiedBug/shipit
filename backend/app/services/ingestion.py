@@ -10,10 +10,14 @@ from typing import Any, Callable, Iterator
 import ijson
 from dateutil import parser as dateutil_parser
 
+import logging
+
 from app.config import settings
 from app.services.geoip import enrich_ip
 from app.services.opensearch import bulk_index
 from app.services.transforms import apply_transforms
+
+logger = logging.getLogger(__name__)
 
 
 # Common date formats to try
@@ -616,6 +620,16 @@ def ingest_file(
     result = IngestionResult()
     batch: list[dict] = []
 
+    # Log GeoIP configuration for debugging
+    if geoip_fields:
+        logger.info(f"GeoIP enrichment enabled for fields: {geoip_fields}")
+    else:
+        logger.debug("GeoIP enrichment not enabled")
+
+    # Counter for sampling GeoIP debug logs
+    geoip_sample_count = 0
+    geoip_success_count = 0
+
     # Get failures directory
     failures_dir = Path(settings.data_dir) / "failures"
     failures_dir.mkdir(parents=True, exist_ok=True)
@@ -629,6 +643,21 @@ def ingest_file(
         mapped_record = apply_field_mappings(
             record, field_mappings, excluded_fields, timestamp_field, field_types, field_transforms, geoip_fields
         )
+
+        # Debug: Check if GeoIP enrichment was applied (sample first 5)
+        if geoip_fields and geoip_sample_count < 5:
+            geo_fields = [k for k in mapped_record.keys() if k.endswith('_geo')]
+            if geo_fields:
+                geoip_success_count += 1
+                if geoip_sample_count == 0:
+                    logger.debug(f"GeoIP enrichment sample: {geo_fields} = {[mapped_record[k] for k in geo_fields]}")
+            else:
+                # Log which fields we were looking for and what values they had
+                for gf in geoip_fields:
+                    if gf in record:
+                        logger.debug(f"GeoIP field '{gf}' has value '{record[gf]}' but no geo data added")
+            geoip_sample_count += 1
+
         batch.append(mapped_record)
 
         if len(batch) >= settings.bulk_batch_size:
@@ -644,6 +673,10 @@ def ingest_file(
         _flush_batch(batch, index_name, result)
         if progress_callback:
             progress_callback(result.processed, result.success, result.failed)
+
+    # Log GeoIP summary
+    if geoip_fields:
+        logger.info(f"GeoIP enrichment completed: {geoip_success_count}/{geoip_sample_count} samples had geo data")
 
     return result
 

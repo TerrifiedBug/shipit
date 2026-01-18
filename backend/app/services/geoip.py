@@ -194,6 +194,7 @@ def enrich_ip(ip_str: str) -> dict[str, Any] | None:
         }
 
     if _reader is None:
+        logger.debug(f"GeoIP reader is None, cannot enrich {ip_str}")
         return None
 
     try:
@@ -206,7 +207,8 @@ def enrich_ip(ip_str: str) -> dict[str, Any] | None:
                 "lon": response.location.longitude,
             } if response.location.latitude else None,
         }
-    except Exception:
+    except Exception as e:
+        logger.debug(f"GeoIP lookup failed for {ip_str}: {e}")
         return None
 
 
