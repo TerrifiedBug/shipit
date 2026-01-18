@@ -285,27 +285,18 @@ export function PatternLibrary({ onClose }: PatternLibraryProps) {
             setShowAddPatternModal(false);
             setEditingPattern(null);
           }}
-          onSave={async (data) => {
-            try {
-              if (editingPattern) {
-                const updated = await updatePattern(editingPattern.id, data);
-                setPatterns((prev) =>
-                  prev.map((p) => (p.id === editingPattern.id ? updated : p))
-                );
-                addToast('Pattern updated', 'success');
-              } else {
-                const created = await createPattern(data);
-                setPatterns((prev) => [...prev, created]);
-                addToast('Pattern created', 'success');
-              }
-              setShowAddPatternModal(false);
-              setEditingPattern(null);
-            } catch (error) {
-              addToast(
-                error instanceof Error ? error.message : 'Failed to save pattern',
-                'error'
+          onSave={(savedPattern) => {
+            if (editingPattern) {
+              setPatterns((prev) =>
+                prev.map((p) => (p.id === editingPattern.id ? savedPattern : p))
               );
+              addToast('Pattern updated', 'success');
+            } else {
+              setPatterns((prev) => [...prev, savedPattern]);
+              addToast('Pattern created', 'success');
             }
+            setShowAddPatternModal(false);
+            setEditingPattern(null);
           }}
         />
       )}
@@ -657,20 +648,24 @@ function GrokPatternModal({
 }
 
 // Modal for adding/editing parsing patterns
-function PatternModal({
+interface PatternModalProps {
+  pattern?: Pattern | null;
+  onClose: () => void;
+  onSave: (pattern: Pattern) => void;
+  initialTestSample?: string;
+}
+
+export function PatternModal({
   pattern,
   onClose,
   onSave,
-}: {
-  pattern: Pattern | null;
-  onClose: () => void;
-  onSave: (data: PatternCreate) => Promise<void>;
-}) {
+  initialTestSample,
+}: PatternModalProps) {
   const [name, setName] = useState(pattern?.name || '');
   const [type, setType] = useState<'regex' | 'grok'>(pattern?.type || 'grok');
   const [patternStr, setPatternStr] = useState(pattern?.pattern || '');
   const [description, setDescription] = useState(pattern?.description || '');
-  const [testSample, setTestSample] = useState(pattern?.test_sample || '');
+  const [testSample, setTestSample] = useState(initialTestSample || pattern?.test_sample || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -709,13 +704,21 @@ function PatternModal({
     setSaving(true);
 
     try {
-      await onSave({
+      const data: PatternCreate = {
         name,
         type,
         pattern: patternStr,
         description: description || undefined,
         test_sample: testSample || undefined,
-      });
+      };
+
+      let result: Pattern;
+      if (pattern) {
+        result = await updatePattern(pattern.id, data);
+      } else {
+        result = await createPattern(data);
+      }
+      onSave(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
       setSaving(false);

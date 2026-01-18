@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { FieldInfo, FileFormat, UploadResponse, reparseUpload } from '../api/client';
+import { useState, useEffect } from 'react';
+import { FieldInfo, FileFormat, UploadResponse, reparseUpload, listPatterns, Pattern } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { PatternModal } from './PatternLibrary';
 
 interface PreviewProps {
   data: UploadResponse;
@@ -10,7 +11,7 @@ interface PreviewProps {
 }
 
 // All supported file formats
-const FILE_FORMATS: { value: FileFormat; label: string }[] = [
+const FILE_FORMATS: { value: FileFormat | 'custom'; label: string }[] = [
   { value: 'json_array', label: 'JSON Array' },
   { value: 'ndjson', label: 'NDJSON' },
   { value: 'csv', label: 'CSV' },
@@ -19,6 +20,7 @@ const FILE_FORMATS: { value: FileFormat; label: string }[] = [
   { value: 'syslog', label: 'Syslog' },
   { value: 'logfmt', label: 'Logfmt' },
   { value: 'raw', label: 'Raw Lines' },
+  { value: 'custom', label: 'Custom Pattern...' },
 ];
 
 function formatFileSize(bytes: number): string {
@@ -60,14 +62,35 @@ function FieldBadge({ field }: { field: FieldInfo }) {
 
 export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps) {
   const { filename, file_size, file_format, preview, fields, upload_id } = data;
-  const [selectedFormat, setSelectedFormat] = useState<FileFormat>(file_format);
+  const [selectedFormat, setSelectedFormat] = useState<FileFormat | 'custom'>(file_format);
   const [isReparsing, setIsReparsing] = useState(false);
+  const [patterns, setPatterns] = useState<Pattern[]>([]);
+  const [selectedPatternId, setSelectedPatternId] = useState<string | null>(null);
+  const [showPatternModal, setShowPatternModal] = useState(false);
   const { addToast } = useToast();
 
-  const handleFormatChange = async (newFormat: FileFormat) => {
+  // Load patterns when custom format is selected
+  useEffect(() => {
+    if (selectedFormat === 'custom') {
+      listPatterns().then(setPatterns).catch(console.error);
+    }
+  }, [selectedFormat]);
+
+  const handleFormatChange = async (newFormat: FileFormat | 'custom') => {
     if (newFormat === selectedFormat) return;
 
+    // If switching away from custom, clear pattern selection
+    if (newFormat !== 'custom') {
+      setSelectedPatternId(null);
+    }
+
     setSelectedFormat(newFormat);
+
+    // Don't reparse yet if custom - wait for pattern selection
+    if (newFormat === 'custom') {
+      return;
+    }
+
     setIsReparsing(true);
 
     try {
@@ -94,6 +117,41 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
     }
   };
 
+  const handlePatternChange = async (patternId: string) => {
+    if (patternId === 'new') {
+      setShowPatternModal(true);
+      return;
+    }
+
+    setSelectedPatternId(patternId);
+    setIsReparsing(true);
+
+    try {
+      const result = await reparseUpload(upload_id, 'custom', patternId);
+      // Update the parent with new preview data
+      if (onDataUpdate) {
+        onDataUpdate({
+          ...data,
+          file_format: result.file_format as FileFormat,
+          preview: result.preview,
+          fields: result.fields,
+        });
+      }
+      addToast('File reparsed with custom pattern', 'success');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Failed to reparse file', 'error');
+      setSelectedPatternId(null);
+    } finally {
+      setIsReparsing(false);
+    }
+  };
+
+  const handlePatternCreated = async (pattern: Pattern) => {
+    setShowPatternModal(false);
+    setPatterns(prev => [...prev, pattern]);
+    await handlePatternChange(pattern.id);
+  };
+
   return (
     <div className="space-y-6">
       {/* File info header */}
@@ -107,7 +165,7 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
               <div className="relative inline-block">
                 <select
                   value={selectedFormat}
-                  onChange={(e) => handleFormatChange(e.target.value as FileFormat)}
+                  onChange={(e) => handleFormatChange(e.target.value as FileFormat | 'custom')}
                   disabled={isReparsing}
                   className="appearance-none px-3 py-0.5 pr-8 bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200 rounded border-0 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -130,6 +188,23 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
                   )}
                 </div>
               </div>
+              {/* Pattern selector - shown when Custom Pattern is selected */}
+              {selectedFormat === 'custom' && (
+                <select
+                  value={selectedPatternId || ''}
+                  onChange={(e) => handlePatternChange(e.target.value)}
+                  className="px-2 py-0.5 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 rounded text-sm"
+                  disabled={isReparsing}
+                >
+                  <option value="">Select pattern...</option>
+                  {patterns.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.type})
+                    </option>
+                  ))}
+                  <option value="new">+ Create New Pattern</option>
+                </select>
+              )}
               <span>{preview.length} records previewed</span>
             </div>
           </div>
@@ -199,6 +274,18 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
           </button>
         </div>
       </div>
+
+      {/* Pattern creation modal */}
+      {showPatternModal && (
+        <PatternModal
+          onClose={() => setShowPatternModal(false)}
+          onSave={handlePatternCreated}
+          initialTestSample={
+            preview[0]?.raw_message as string ||
+            JSON.stringify(preview[0], null, 2)
+          }
+        />
+      )}
     </div>
   );
 }
