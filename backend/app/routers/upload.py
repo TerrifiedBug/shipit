@@ -450,6 +450,7 @@ def _run_ingestion_task(
     pattern: dict | None = None,
     multiline_start: str | None = None,
     multiline_max_lines: int = 100,
+    field_transforms: dict | None = None,
 ):
     """Run ingestion in a background thread."""
     start_time = time.time()
@@ -504,6 +505,7 @@ def _run_ingestion_task(
                 pattern=pattern,
                 multiline_start=multiline_start,
                 multiline_max_lines=multiline_max_lines,
+                field_transforms=field_transforms,
             )
 
             # Accumulate totals after each file
@@ -647,6 +649,14 @@ async def start_ingest(upload_id: str, request: IngestRequest, http_request: Req
     user = getattr(http_request.state, "user", None) if http_request else None
     user_id = user["id"] if user else None
 
+    # Convert field_transforms from Pydantic models to dicts for the service layer
+    field_transforms_dict = None
+    if request.field_transforms:
+        field_transforms_dict = {
+            field: [t.model_dump(exclude_none=True) for t in transforms]
+            for field, transforms in request.field_transforms.items()
+        }
+
     # Start background thread for ingestion
     thread = threading.Thread(
         target=_run_ingestion_task,
@@ -666,6 +676,7 @@ async def start_ingest(upload_id: str, request: IngestRequest, http_request: Req
             pattern,
             request.multiline_start,
             request.multiline_max_lines,
+            field_transforms_dict,
         ),
         daemon=True,
     )

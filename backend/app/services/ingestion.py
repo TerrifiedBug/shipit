@@ -12,6 +12,7 @@ from dateutil import parser as dateutil_parser
 
 from app.config import settings
 from app.services.opensearch import bulk_index
+from app.services.transforms import apply_transforms
 
 
 # Common date formats to try
@@ -227,6 +228,7 @@ def apply_field_mappings(
     excluded_fields: list[str],
     timestamp_field: str | None = None,
     field_types: dict[str, str] | None = None,
+    field_transforms: dict[str, list[dict]] | None = None,
 ) -> dict[str, Any]:
     """Apply field mappings, exclusions, type coercion, and timestamp processing to a record."""
     result = {}
@@ -234,6 +236,10 @@ def apply_field_mappings(
     for key, value in record.items():
         if key in excluded_fields:
             continue
+
+        # Apply transforms BEFORE mapping (transforms use original field names)
+        if field_transforms and key in field_transforms:
+            value = apply_transforms(value, field_transforms[key])
 
         # Apply mapping if exists, otherwise keep original name
         new_key = field_mappings.get(key, key)
@@ -568,6 +574,7 @@ def ingest_file(
     pattern: dict | None = None,
     multiline_start: str | None = None,
     multiline_max_lines: int = 100,
+    field_transforms: dict[str, list[dict]] | None = None,
 ) -> IngestionResult:
     """
     Ingest a file into OpenSearch.
@@ -586,6 +593,7 @@ def ingest_file(
         pattern: Optional pattern dict for custom format parsing
         multiline_start: Optional regex pattern marking the start of a new record
         multiline_max_lines: Maximum lines to merge before forcing flush (default: 100)
+        field_transforms: Optional dict mapping field names to list of transforms to apply
 
     Returns:
         IngestionResult with counts and any failed records
@@ -605,9 +613,9 @@ def ingest_file(
         if include_filename:
             record[filename_field] = file_path.name
 
-        # Apply field mappings, timestamp processing, and type coercion
+        # Apply field mappings, timestamp processing, type coercion, and transforms
         mapped_record = apply_field_mappings(
-            record, field_mappings, excluded_fields, timestamp_field, field_types
+            record, field_mappings, excluded_fields, timestamp_field, field_types, field_transforms
         )
         batch.append(mapped_record)
 

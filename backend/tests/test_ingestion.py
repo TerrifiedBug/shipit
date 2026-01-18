@@ -282,3 +282,104 @@ class TestIngestFile:
         call_args = mock_bulk_index.call_args
         records = call_args[0][1]
         assert all("source_file" not in r for r in records)
+
+
+class TestFieldTransforms:
+    """Tests for field transforms integration in ingestion pipeline."""
+
+    def test_transforms_applied_before_mapping(self):
+        """Test that transforms are applied using original field names before mapping."""
+        record = {"email": "  USER@EXAMPLE.COM  ", "name": "Alice"}
+        # Transform lowercase and trim on original field name 'email'
+        field_transforms = {
+            "email": [{"name": "trim"}, {"name": "lowercase"}]
+        }
+        # Mapping renames 'email' to 'user_email'
+        field_mappings = {"email": "user_email"}
+
+        result = apply_field_mappings(
+            record, field_mappings, [], field_transforms=field_transforms
+        )
+
+        # Value should be transformed AND renamed
+        assert "user_email" in result
+        assert result["user_email"] == "user@example.com"
+        assert "email" not in result
+
+    def test_transform_with_options(self):
+        """Test transform with options (e.g., truncate with max_length)."""
+        record = {"message": "This is a very long message that should be truncated"}
+        field_transforms = {
+            "message": [{"name": "truncate", "max_length": 10}]
+        }
+
+        result = apply_field_mappings(record, {}, [], field_transforms=field_transforms)
+
+        assert result["message"] == "This is a "
+
+    def test_multiple_transforms_in_sequence(self):
+        """Test multiple transforms applied in sequence."""
+        record = {"data": "  HELLO WORLD  "}
+        field_transforms = {
+            "data": [
+                {"name": "trim"},
+                {"name": "lowercase"},
+                {"name": "truncate", "max_length": 5}
+            ]
+        }
+
+        result = apply_field_mappings(record, {}, [], field_transforms=field_transforms)
+
+        # trim -> "HELLO WORLD", lowercase -> "hello world", truncate -> "hello"
+        assert result["data"] == "hello"
+
+    def test_field_without_transforms_unchanged(self):
+        """Test that fields without transforms remain unchanged."""
+        record = {"name": "Alice", "email": "ALICE@EXAMPLE.COM"}
+        field_transforms = {
+            "email": [{"name": "lowercase"}]
+        }
+
+        result = apply_field_mappings(record, {}, [], field_transforms=field_transforms)
+
+        assert result["name"] == "Alice"  # Unchanged
+        assert result["email"] == "alice@example.com"  # Transformed
+
+    def test_empty_transforms_list(self):
+        """Test that empty transforms list has no effect."""
+        record = {"name": "Alice"}
+        field_transforms = {"name": []}
+
+        result = apply_field_mappings(record, {}, [], field_transforms=field_transforms)
+
+        assert result["name"] == "Alice"
+
+    def test_no_transforms_parameter(self):
+        """Test that missing field_transforms parameter works."""
+        record = {"name": "Alice", "age": 30}
+        result = apply_field_mappings(record, {}, [])
+        assert result == {"name": "Alice", "age": 30}
+
+    @patch("app.services.ingestion.bulk_index")
+    def test_ingest_file_with_transforms(self, mock_bulk_index, json_array_file):
+        """Test that ingest_file passes transforms to apply_field_mappings."""
+        mock_bulk_index.return_value = {"success": 3, "failed": []}
+
+        # Transform names to uppercase
+        field_transforms = {
+            "name": [{"name": "uppercase"}]
+        }
+
+        result = ingest_file(
+            file_path=json_array_file,
+            file_format="json_array",
+            index_name="shipit-test",
+            field_transforms=field_transforms,
+        )
+
+        assert result.processed == 3
+        # Check that transforms were applied
+        call_args = mock_bulk_index.call_args
+        records = call_args[0][1]
+        assert all(r["name"].isupper() for r in records)
+        assert records[0]["name"] == "ALICE"
