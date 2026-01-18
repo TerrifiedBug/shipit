@@ -13,6 +13,15 @@ from app.config import settings
 FileFormat = Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog", "logfmt", "raw"]
 
 
+class FormatValidationError(Exception):
+    """Raised when file content doesn't match selected format."""
+
+    def __init__(self, message: str, suggested_formats: list[str] | None = None):
+        self.message = message
+        self.suggested_formats = suggested_formats or []
+        super().__init__(message)
+
+
 def _validate_file_path(file_path: Path) -> Path:
     """Validate file path is within allowed data directory.
 
