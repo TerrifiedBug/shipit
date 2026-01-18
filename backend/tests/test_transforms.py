@@ -54,3 +54,38 @@ class TestApplyTransforms:
         """Transform without name key is handled gracefully."""
         result = apply_transforms("test", [{"typo": "lowercase"}])
         assert result == "test"
+
+
+class TestRegexTransforms:
+    def test_regex_extract(self):
+        """regex_extract should capture first group."""
+        result = apply_transform(
+            "user=danny action=login",
+            "regex_extract",
+            pattern=r"user=(\w+)"
+        )
+        assert result == "danny"
+
+    def test_regex_extract_no_match(self):
+        """regex_extract with no match should return original."""
+        result = apply_transform(
+            "no match here",
+            "regex_extract",
+            pattern=r"user=(\w+)"
+        )
+        assert result == "no match here"
+
+    def test_regex_replace(self):
+        """regex_replace should replace matches."""
+        result = apply_transform(
+            "192.168.1.50",
+            "regex_replace",
+            pattern=r"(\d+)\.(\d+)\.(\d+)\.\d+",
+            replacement=r"\1.\2.\3.x"
+        )
+        assert result == "192.168.1.x"
+
+    def test_truncate(self):
+        """truncate should limit string length."""
+        result = apply_transform("abcdefghij", "truncate", max_length=5)
+        assert result == "abcde"

@@ -2,6 +2,7 @@
 """Field transformation functions for data ingestion."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -57,8 +58,41 @@ def _trim(value: Any, **_) -> Any:
     return value.strip() if isinstance(value, str) else value
 
 
+def _regex_extract(value: Any, pattern: str = "", **_) -> Any:
+    """Extract first capture group from regex match."""
+    if not isinstance(value, str) or not pattern:
+        return value
+    try:
+        match = re.search(pattern, value)
+        if match and match.groups():
+            return match.group(1)
+    except re.error:
+        pass
+    return value
+
+
+def _regex_replace(value: Any, pattern: str = "", replacement: str = "", **_) -> Any:
+    """Replace regex matches in string."""
+    if not isinstance(value, str) or not pattern:
+        return value
+    try:
+        return re.sub(pattern, replacement, value)
+    except re.error:
+        return value
+
+
+def _truncate(value: Any, max_length: int = 100, **_) -> Any:
+    """Truncate string to max length."""
+    if not isinstance(value, str):
+        return value
+    return value[:max_length]
+
+
 TRANSFORMS = {
     "lowercase": _lowercase,
     "uppercase": _uppercase,
     "trim": _trim,
+    "regex_extract": _regex_extract,
+    "regex_replace": _regex_replace,
+    "truncate": _truncate,
 }
