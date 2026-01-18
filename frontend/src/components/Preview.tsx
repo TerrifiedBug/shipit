@@ -64,7 +64,6 @@ const MULTILINE_PRESETS = [
   { label: 'Timestamp (ISO)', value: '^\\d{4}-\\d{2}-\\d{2}' },
   { label: 'Timestamp (Syslog)', value: '^[A-Z][a-z]{2}\\s+\\d+' },
   { label: 'Non-whitespace start', value: '^\\S' },
-  { label: 'Custom...', value: '' },
 ];
 
 export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps) {
@@ -76,6 +75,7 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
   const [showPatternModal, setShowPatternModal] = useState(false);
   const [multilineEnabled, setMultilineEnabled] = useState(false);
   const [multilineStart, setMultilineStart] = useState('');
+  const [isCustomMultilinePattern, setIsCustomMultilinePattern] = useState(false);
   const { addToast } = useToast();
 
   // Load patterns when custom format is selected
@@ -91,6 +91,13 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
     // If switching away from custom, clear pattern selection
     if (newFormat !== 'custom') {
       setSelectedPatternId(null);
+    }
+
+    // Clear multiline state when switching to non-multiline formats
+    if (!['raw', 'logfmt', 'custom'].includes(newFormat)) {
+      setMultilineEnabled(false);
+      setMultilineStart('');
+      setIsCustomMultilinePattern(false);
     }
 
     setSelectedFormat(newFormat);
@@ -266,8 +273,16 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
             {multilineEnabled && (
               <div className="mt-2 space-y-2">
                 <select
-                  value={MULTILINE_PRESETS.find(p => p.value === multilineStart)?.value ?? ''}
-                  onChange={(e) => setMultilineStart(e.target.value)}
+                  value={isCustomMultilinePattern ? 'custom' : (MULTILINE_PRESETS.find(p => p.value === multilineStart)?.value ?? '')}
+                  onChange={(e) => {
+                    if (e.target.value === 'custom') {
+                      setIsCustomMultilinePattern(true);
+                      setMultilineStart('');
+                    } else {
+                      setIsCustomMultilinePattern(false);
+                      setMultilineStart(e.target.value);
+                    }
+                  }}
                   className="w-full px-2 py-1 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 >
                   <option value="">Select pattern...</option>
@@ -276,9 +291,10 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
                       {preset.label}
                     </option>
                   ))}
+                  <option value="custom">Custom...</option>
                 </select>
 
-                {!MULTILINE_PRESETS.find(p => p.value === multilineStart) && multilineStart && (
+                {isCustomMultilinePattern && (
                   <input
                     type="text"
                     value={multilineStart}
@@ -289,7 +305,7 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
                 )}
 
                 <button
-                  onClick={() => handleReparse()}
+                  onClick={handleReparse}
                   disabled={!multilineStart || isReparsing}
                   className="px-3 py-1 text-sm bg-blue-600 text-white rounded disabled:opacity-50 hover:bg-blue-700"
                 >
