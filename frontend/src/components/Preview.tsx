@@ -106,16 +106,12 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
     }
 
     setSelectedFormat(newFormat);
-
-    // Don't reparse yet if custom - wait for pattern selection
-    if (newFormat === 'custom') {
-      return;
-    }
-
     setIsReparsing(true);
 
     try {
-      const result = await reparseUpload(upload_id, newFormat);
+      // For custom format, show raw lines first (before pattern is applied)
+      const parseFormat = newFormat === 'custom' ? 'raw' : newFormat;
+      const result = await reparseUpload(upload_id, parseFormat);
       // Update the parent with new preview data
       if (onDataUpdate) {
         onDataUpdate({

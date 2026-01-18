@@ -168,9 +168,14 @@ function App() {
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (pendingUploadRef.current) {
-        // Use sendBeacon for reliable delivery on page unload
+        // Use fetch with keepalive for reliable delivery on page unload
+        // (sendBeacon doesn't include credentials for cross-origin requests)
         const url = `${import.meta.env.VITE_API_URL || ''}/api/upload/${pendingUploadRef.current}/abandon`;
-        navigator.sendBeacon(url);
+        fetch(url, {
+          method: 'POST',
+          credentials: 'include',
+          keepalive: true,
+        });
       }
     };
 
