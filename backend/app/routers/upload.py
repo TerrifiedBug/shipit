@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 
 from app.config import settings
 from app.routers.auth import require_auth
+from app.services.request_utils import get_client_ip
 from app.models import FieldInfo, IngestRequest, PreviewResponse, UploadResponse
 from app.services import database as db
 from app.services.ingestion import count_records, ingest_file
@@ -74,19 +75,6 @@ def _validate_upload_id(upload_id: str) -> str:
         raise HTTPException(status_code=400, detail="Invalid upload ID format")
 
 
-def _get_client_ip(request: Request | None) -> str:
-    """Extract client IP from request, checking X-Forwarded-For for proxies."""
-    if not request:
-        return "unknown"
-    # Check X-Forwarded-For header (set by reverse proxies)
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        # Take the first IP (original client)
-        return forwarded.split(",")[0].strip()
-    # Fall back to direct client IP
-    return request.client.host if request.client else "unknown"
-
-
 def _read_raw_lines(file_paths: list[Path], limit: int = 10) -> list[str]:
     """Read raw lines from files for pattern testing.
 
@@ -117,7 +105,7 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
     # Check rate limit
     user = getattr(request.state, "user", None) if request else None
     user_id = user["id"] if user else None
-    client_ip = _get_client_ip(request)
+    client_ip = get_client_ip(request)
 
     is_allowed, retry_after = check_upload_rate_limit(user_id, client_ip)
     if not is_allowed:

@@ -7,16 +7,9 @@ from pydantic import BaseModel, EmailStr
 from app.routers.auth import require_auth
 from app.services import audit, database as db
 from app.services.auth import hash_password
+from app.services.request_utils import get_client_ip
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-def _get_client_ip(request: Request) -> str:
-    """Extract client IP from request, checking X-Forwarded-For for proxies."""
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 def require_admin(request: Request) -> dict:
@@ -111,7 +104,7 @@ def create_user(request: CreateUserRequest, http_request: Request = None, admin:
         target_user_id=user["id"],
         target_email=request.email,
         is_admin=request.is_admin,
-        ip_address=_get_client_ip(http_request) if http_request else None,
+        ip_address=get_client_ip(http_request) if http_request else None,
     )
 
     return UserResponse(
@@ -183,7 +176,7 @@ def update_user(
             target_user_id=user_id,
             target_email=user["email"],
             changes=changes,
-            ip_address=_get_client_ip(http_request) if http_request else None,
+            ip_address=get_client_ip(http_request) if http_request else None,
         )
 
     updated = db.get_user_by_id(user_id)
@@ -227,7 +220,7 @@ def delete_user(user_id: str, http_request: Request = None, admin: dict = Depend
         actor_name=admin.get("email", ""),
         target_user_id=user_id,
         target_email=user["email"],
-        ip_address=_get_client_ip(http_request) if http_request else None,
+        ip_address=get_client_ip(http_request) if http_request else None,
     )
 
     return {"message": f"User {user['email']} deleted"}
@@ -264,7 +257,7 @@ def deactivate_user(user_id: str, http_request: Request = None, admin: dict = De
         target_user_id=user_id,
         target_email=user["email"],
         changes={"is_active": {"from": True, "to": False}},
-        ip_address=_get_client_ip(http_request) if http_request else None,
+        ip_address=get_client_ip(http_request) if http_request else None,
     )
 
     updated = db.get_user_by_id(user_id)
@@ -296,7 +289,7 @@ def activate_user(user_id: str, http_request: Request = None, admin: dict = Depe
         target_user_id=user_id,
         target_email=user["email"],
         changes={"is_active": {"from": False, "to": True}},
-        ip_address=_get_client_ip(http_request) if http_request else None,
+        ip_address=get_client_ip(http_request) if http_request else None,
     )
 
     updated = db.get_user_by_id(user_id)
