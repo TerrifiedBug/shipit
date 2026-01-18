@@ -622,3 +622,63 @@ def validate_field_count(records: list[dict], max_fields: int) -> tuple[bool, in
             return False, field_count
 
     return True, max_found
+
+
+def _validate_csv(file_path: Path) -> None:
+    """Validate file looks like CSV with header row."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        # Read sample
+        sample = f.read(8192)
+        if not sample.strip():
+            raise FormatValidationError(
+                "File is empty",
+                suggested_formats=[]
+            )
+
+        f.seek(0)
+
+        # Try to detect delimiter
+        try:
+            dialect = csv.Sniffer().sniff(sample)
+        except csv.Error:
+            raise FormatValidationError(
+                "File doesn't appear to be CSV - no consistent delimiter detected. Try: Raw or Logfmt",
+                suggested_formats=["raw", "logfmt"]
+            )
+
+        # Check column consistency
+        f.seek(0)
+        reader = csv.reader(f, dialect=dialect)
+        rows = []
+        for i, row in enumerate(reader):
+            if i >= 5:  # Check first 5 rows
+                break
+            rows.append(row)
+
+        if len(rows) < 2:
+            raise FormatValidationError(
+                "File doesn't appear to be CSV - no data rows found. Try: Raw",
+                suggested_formats=["raw"]
+            )
+
+        header_len = len(rows[0])
+        for i, row in enumerate(rows[1:], 1):
+            if len(row) != header_len:
+                raise FormatValidationError(
+                    f"File doesn't appear to be CSV - row {i+1} has {len(row)} columns but header has {header_len}. Try: Raw or Logfmt",
+                    suggested_formats=["raw", "logfmt"]
+                )
+
+
+def validate_format(file_path: Path, file_format: str) -> None:
+    """Validate file content matches the selected format.
+
+    Raises FormatValidationError with suggestions if mismatch.
+    """
+    validators = {
+        "csv": _validate_csv,
+    }
+
+    validator = validators.get(file_format)
+    if validator:
+        validator(file_path)
