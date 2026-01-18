@@ -162,7 +162,8 @@ docker run -p 80:80 --env-file .env shipit
 | `APP_URL` | - | Public URL for CORS and OIDC callbacks (e.g., `https://shipit.example.com`) |
 | `FAILURE_FILE_RETENTION_HOURS` | `24` | How long to keep failed record files |
 | `BULK_BATCH_SIZE` | `1000` | Number of records per bulk insert to OpenSearch |
-| `MAXMIND_LICENSE_KEY` | - | MaxMind GeoLite2 license key for GeoIP enrichment (optional) |
+| `MAXMIND_LICENSE_KEY` | - | MaxMind GeoLite2 license key for GeoIP enrichment (auto-downloads DB) |
+| `GEOIP_AUTO_UPDATE_DAYS` | `7` | Auto-update GeoIP database interval in days (0 to disable) |
 
 ### OIDC SSO (Optional)
 
