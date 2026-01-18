@@ -288,25 +288,32 @@ async def get_preview(upload_id: str):
     )
 
 
-@router.post("/{upload_id}/reparse")
+@router.post("/upload/{upload_id}/reparse")
 async def reparse_upload(
     upload_id: str,
     format: str = Form(...),
     user: dict = Depends(require_auth),
 ):
     """Re-parse uploaded file with a different format."""
-    safe_id = _sanitize_upload_id(upload_id)
-    upload = get_pending_upload(safe_id)
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
 
-    # Get all file paths from the upload
-    file_paths = upload.get("file_paths", [])
-    if not file_paths and upload.get("file_path"):
-        file_paths = [upload["file_path"]]
+    # Get file paths from cache or reconstruct from database
+    cache = _upload_cache.get(safe_id)
+    if cache and "file_paths" in cache:
+        file_paths = [Path(fp) for fp in cache["file_paths"]]
+    else:
+        # Fallback: reconstruct from database
+        upload_dir = _get_upload_dir() / safe_id
+        filenames = upload.get("filenames", [upload["filename"]])
+        file_paths = [upload_dir / fn for fn in filenames]
 
-    if not file_paths:
-        raise HTTPException(status_code=400, detail="No files found for upload")
+    # Verify files exist
+    existing_paths = [fp for fp in file_paths if fp.exists()]
+    if not existing_paths:
+        raise HTTPException(status_code=404, detail="Uploaded files no longer exist")
 
     # Validate format
     valid_formats = ["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog", "logfmt", "raw"]
@@ -316,11 +323,8 @@ async def reparse_upload(
     # Parse with new format
     try:
         combined_preview = []
-        for file_path in file_paths:
-            path = Path(file_path)
-            if not path.exists():
-                continue
-            preview_records = parse_preview(path, format, limit=100)
+        for file_path in existing_paths:
+            preview_records = parse_preview(file_path, format, limit=100)
             combined_preview.extend(preview_records)
             if len(combined_preview) >= 100:
                 combined_preview = combined_preview[:100]
@@ -340,11 +344,11 @@ async def reparse_upload(
         fields = infer_fields(combined_preview)
 
         # Update upload record with new format
-        update_pending_upload(safe_id, file_format=format)
+        db.update_upload(safe_id, file_format=format)
 
         # Update cache
         _upload_cache[safe_id] = {
-            "file_paths": [Path(p) for p in file_paths],
+            "file_paths": [str(fp) for fp in existing_paths],
             "preview": combined_preview,
             "fields": fields,
         }
