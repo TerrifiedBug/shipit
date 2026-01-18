@@ -638,7 +638,15 @@ export async function reparseUpload(
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Failed to reparse');
+    // Handle structured error with suggested_formats
+    if (error.detail && typeof error.detail === 'object' && error.detail.suggested_formats) {
+      const err = new Error(error.detail.error || 'Failed to reparse') as Error & {
+        suggested_formats?: string[];
+      };
+      err.suggested_formats = error.detail.suggested_formats;
+      throw err;
+    }
+    throw new Error(typeof error.detail === 'string' ? error.detail : 'Failed to reparse');
   }
 
   return response.json();

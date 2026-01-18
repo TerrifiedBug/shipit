@@ -126,10 +126,16 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
     } catch (error) {
       // Revert format selection on error
       setSelectedFormat(file_format);
-      addToast(
-        error instanceof Error ? error.message : 'Failed to reparse file',
-        'error'
-      );
+      let errorMessage = error instanceof Error ? error.message : 'Failed to reparse file';
+      // Show suggested formats if available
+      const suggestedFormats = (error as Error & { suggested_formats?: string[] })?.suggested_formats;
+      if (suggestedFormats && suggestedFormats.length > 0) {
+        const suggestions = suggestedFormats
+          .map((f) => formatFileFormat(f))
+          .join(', ');
+        errorMessage += `. Try: ${suggestions}`;
+      }
+      addToast(errorMessage, 'error');
     } finally {
       setIsReparsing(false);
     }
@@ -158,7 +164,16 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
       }
       addToast('File reparsed with custom pattern', 'success');
     } catch (error) {
-      addToast(error instanceof Error ? error.message : 'Failed to reparse file', 'error');
+      let errorMessage = error instanceof Error ? error.message : 'Failed to reparse file';
+      // Show suggested formats if available
+      const suggestedFormats = (error as Error & { suggested_formats?: string[] })?.suggested_formats;
+      if (suggestedFormats && suggestedFormats.length > 0) {
+        const suggestions = suggestedFormats
+          .map((f) => formatFileFormat(f))
+          .join(', ');
+        errorMessage += `. Try: ${suggestions}`;
+      }
+      addToast(errorMessage, 'error');
       setSelectedPatternId(null);
     } finally {
       setIsReparsing(false);
@@ -191,7 +206,16 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
       }
       addToast('Preview updated', 'success');
     } catch (error) {
-      addToast(error instanceof Error ? error.message : 'Failed to reparse', 'error');
+      let errorMessage = error instanceof Error ? error.message : 'Failed to reparse';
+      // Show suggested formats if available
+      const suggestedFormats = (error as Error & { suggested_formats?: string[] })?.suggested_formats;
+      if (suggestedFormats && suggestedFormats.length > 0) {
+        const suggestions = suggestedFormats
+          .map((f) => formatFileFormat(f))
+          .join(', ');
+        errorMessage += `. Try: ${suggestions}`;
+      }
+      addToast(errorMessage, 'error');
     } finally {
       setIsReparsing(false);
     }

@@ -20,7 +20,7 @@ from app.models import FieldInfo, IngestRequest, PreviewResponse, UploadResponse
 from app.services import database as db
 from app.services.ingestion import count_records, ingest_file
 from app.services.opensearch import validate_index_name, validate_index_for_ingestion
-from app.services.parser import detect_format, infer_fields, parse_preview, validate_field_count, parse_with_pattern
+from app.services.parser import detect_format, infer_fields, parse_preview, validate_field_count, parse_with_pattern, validate_format, FormatValidationError
 from app.services.rate_limit import check_upload_rate_limit
 
 router = APIRouter()
@@ -348,6 +348,18 @@ async def reparse_upload(
             re.compile(multiline_start)
         except re.error as e:
             raise HTTPException(status_code=400, detail=f"Invalid multiline pattern: {e}")
+
+    # Validate format before parsing
+    try:
+        validate_format(existing_paths[0], format)
+    except FormatValidationError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": e.message,
+                "suggested_formats": e.suggested_formats
+            }
+        )
 
     # Parse with new format
     try:
