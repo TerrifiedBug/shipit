@@ -35,6 +35,33 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 login_rate_limiter = RateLimiter(window_seconds=60)
 
 
+def authenticate_user(email: str, password: str) -> dict | None:
+    """Authenticate a user by email and password.
+
+    Uses constant-time comparison to prevent timing attacks.
+    Always performs password hash check even for nonexistent users.
+    """
+    user = get_user_by_email(email)
+
+    # Always hash to prevent timing attacks - use a dummy hash for nonexistent users
+    # This hash corresponds to "dummy" but the actual value doesn't matter
+    dummy_hash = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VT7g9WLdQp5E2G"
+    hash_to_check = user["password_hash"] if user and user.get("password_hash") else dummy_hash
+
+    password_valid = verify_password(password, hash_to_check)
+
+    if not user or not password_valid:
+        return None
+
+    if user.get("auth_type") != "local":
+        return None
+
+    if not user.get("is_active", True):
+        return None
+
+    return user
+
+
 def _set_session_cookie(response: Response, token: str) -> None:
     """Set session cookie with appropriate security settings."""
     response.set_cookie(
