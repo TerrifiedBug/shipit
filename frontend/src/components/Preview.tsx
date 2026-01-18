@@ -76,7 +76,7 @@ export function Preview({ data, onBack, onContinue, onDataUpdate }: PreviewProps
       if (onDataUpdate) {
         onDataUpdate({
           ...data,
-          file_format: result.file_format,
+          file_format: result.file_format as FileFormat,
           preview: result.preview,
           fields: result.fields,
         });

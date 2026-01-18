@@ -151,7 +151,7 @@ export interface FieldInfo {
 }
 
 // Supported file formats for parsing
-export type FileFormat = 'json_array' | 'ndjson' | 'csv' | 'tsv' | 'ltsv' | 'syslog' | 'logfmt' | 'raw';
+export type FileFormat = 'json_array' | 'ndjson' | 'csv' | 'tsv' | 'ltsv' | 'syslog' | 'logfmt' | 'raw' | 'custom';
 
 export interface UploadResponse {
   upload_id: string;
@@ -608,10 +608,20 @@ export async function getAppSettings(): Promise<AppSettings> {
 // Reparse function for format override
 export async function reparseUpload(
   uploadId: string,
-  format: FileFormat
-): Promise<PreviewResponse> {
+  format: FileFormat | 'custom',
+  patternId?: string
+): Promise<{
+  upload_id: string;
+  file_format: string;
+  pattern_id: string | null;
+  preview: Record<string, unknown>[];
+  fields: FieldInfo[];
+}> {
   const formData = new FormData();
   formData.append('format', format);
+  if (patternId) {
+    formData.append('pattern_id', patternId);
+  }
 
   const response = await fetch(`${API_BASE}/api/upload/${uploadId}/reparse`, {
     method: 'POST',
@@ -621,7 +631,7 @@ export async function reparseUpload(
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'Failed to reparse file');
+    throw new Error(error.detail || 'Failed to reparse');
   }
 
   return response.json();
