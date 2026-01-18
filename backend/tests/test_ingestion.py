@@ -1,8 +1,38 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from app.services.ingestion import apply_field_mappings, ingest_file, stream_records
+from app.services.ingestion import apply_field_mappings, ingest_file, stream_records, merge_multiline
 from app.services.opensearch import validate_index_name
+
+
+def test_merge_multiline_with_timestamp():
+    """Test merging lines based on timestamp pattern."""
+    lines = [
+        "2026-01-18 10:00:00 First message",
+        "  continuation line 1",
+        "  continuation line 2",
+        "2026-01-18 10:00:01 Second message",
+        "2026-01-18 10:00:02 Third message",
+    ]
+
+    pattern = r"^\d{4}-\d{2}-\d{2}"
+    result = list(merge_multiline(iter(lines), pattern, max_lines=100))
+
+    assert len(result) == 3
+    assert result[0] == "2026-01-18 10:00:00 First message\n  continuation line 1\n  continuation line 2"
+    assert result[1] == "2026-01-18 10:00:01 Second message"
+    assert result[2] == "2026-01-18 10:00:02 Third message"
+
+
+def test_merge_multiline_max_lines():
+    """Test max_lines limit prevents runaway merging."""
+    lines = ["START"] + [f"  line {i}" for i in range(200)]
+
+    pattern = r"^START"
+    result = list(merge_multiline(iter(lines), pattern, max_lines=50))
+
+    # Should have flushed at 50 lines
+    assert len(result) >= 2
 
 
 class TestApplyFieldMappings:

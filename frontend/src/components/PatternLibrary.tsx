@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   BuiltinGrokPattern,
   GrokPattern,
   GrokPatternCreate,
   Pattern,
   PatternCreate,
-  PatternTestResponse,
   createGrokPattern,
   createPattern,
   deleteGrokPattern,
@@ -13,11 +12,13 @@ import {
   listBuiltinGrokPatterns,
   listGrokPatterns,
   listPatterns,
-  testPattern,
   updateGrokPattern,
   updatePattern,
 } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { HighlightedInput, GROUP_COLORS, Highlight } from './HighlightedInput';
+import { usePatternMatch } from '../hooks/usePatternMatch';
+import { GrokAutocomplete } from './GrokAutocomplete';
 
 interface PatternLibraryProps {
   onClose: () => void;
@@ -285,27 +286,18 @@ export function PatternLibrary({ onClose }: PatternLibraryProps) {
             setShowAddPatternModal(false);
             setEditingPattern(null);
           }}
-          onSave={async (data) => {
-            try {
-              if (editingPattern) {
-                const updated = await updatePattern(editingPattern.id, data);
-                setPatterns((prev) =>
-                  prev.map((p) => (p.id === editingPattern.id ? updated : p))
-                );
-                addToast('Pattern updated', 'success');
-              } else {
-                const created = await createPattern(data);
-                setPatterns((prev) => [...prev, created]);
-                addToast('Pattern created', 'success');
-              }
-              setShowAddPatternModal(false);
-              setEditingPattern(null);
-            } catch (error) {
-              addToast(
-                error instanceof Error ? error.message : 'Failed to save pattern',
-                'error'
+          onSave={(savedPattern) => {
+            if (editingPattern) {
+              setPatterns((prev) =>
+                prev.map((p) => (p.id === editingPattern.id ? savedPattern : p))
               );
+              addToast('Pattern updated', 'success');
+            } else {
+              setPatterns((prev) => [...prev, savedPattern]);
+              addToast('Pattern created', 'success');
             }
+            setShowAddPatternModal(false);
+            setEditingPattern(null);
           }}
         />
       )}
@@ -657,24 +649,52 @@ function GrokPatternModal({
 }
 
 // Modal for adding/editing parsing patterns
-function PatternModal({
+interface PatternModalProps {
+  pattern?: Pattern | null;
+  onClose: () => void;
+  onSave: (pattern: Pattern) => void;
+  initialTestSample?: string;
+}
+
+export function PatternModal({
   pattern,
   onClose,
   onSave,
-}: {
-  pattern: Pattern | null;
-  onClose: () => void;
-  onSave: (data: PatternCreate) => Promise<void>;
-}) {
+  initialTestSample,
+}: PatternModalProps) {
   const [name, setName] = useState(pattern?.name || '');
   const [type, setType] = useState<'regex' | 'grok'>(pattern?.type || 'grok');
   const [patternStr, setPatternStr] = useState(pattern?.pattern || '');
   const [description, setDescription] = useState(pattern?.description || '');
-  const [testSample, setTestSample] = useState(pattern?.test_sample || '');
+  const [testSample, setTestSample] = useState(initialTestSample || pattern?.test_sample || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<PatternTestResponse | null>(null);
-  const { addToast } = useToast();
+
+  // Autocomplete state
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [autocompleteFilter, setAutocompleteFilter] = useState('');
+  const [autocompletePosition, setAutocompletePosition] = useState({ top: 0, left: 0 });
+  const patternTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [builtinPatterns, setBuiltinPatterns] = useState<BuiltinGrokPattern[]>([]);
+
+  // Load builtin patterns for autocomplete
+  useEffect(() => {
+    listBuiltinGrokPatterns().then(setBuiltinPatterns).catch(console.error);
+  }, []);
+
+  // Live pattern matching
+  const { result: matchResult, error: matchError, loading: matchLoading } = usePatternMatch(
+    patternStr,
+    testSample,
+    type
+  );
+
+  // Convert match result to highlights
+  const highlights: Highlight[] = matchResult?.groups.map((group, idx) => ({
+    start: group.start,
+    end: group.end,
+    colorIndex: idx,
+  })) || [];
 
   // Track if form has unsaved changes
   const isDirty =
@@ -691,45 +711,84 @@ function PatternModal({
     onClose();
   };
 
-  const handleTest = async () => {
-    if (!patternStr || !testSample) {
-      addToast('Enter both pattern and test sample', 'error');
-      return;
-    }
-
-    try {
-      const result = await testPattern({
-        pattern: patternStr,
-        pattern_type: type,
-        test_text: testSample,
-      });
-      setTestResult(result);
-    } catch (err) {
-      setTestResult({
-        success: false,
-        matches: null,
-        error: err instanceof Error ? err.message : 'Test failed',
-      });
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSaving(true);
 
     try {
-      await onSave({
+      const data: PatternCreate = {
         name,
         type,
         pattern: patternStr,
         description: description || undefined,
         test_sample: testSample || undefined,
-      });
+      };
+
+      let result: Pattern;
+      if (pattern) {
+        result = await updatePattern(pattern.id, data);
+      } else {
+        result = await createPattern(data);
+      }
+      onSave(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
       setSaving(false);
     }
+  };
+
+  // Autocomplete trigger logic
+  const handlePatternKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget;
+    const cursorPos = textarea.selectionStart;
+    const textBeforeCursor = textarea.value.substring(0, cursorPos);
+
+    // Check if we're typing a grok pattern: %{...
+    const match = textBeforeCursor.match(/%\{([A-Z0-9_]*)$/i);
+
+    if (match && type === 'grok') {
+      setAutocompleteFilter(match[1]);
+
+      // Calculate position (simplified - position below textarea)
+      const rect = textarea.getBoundingClientRect();
+      setAutocompletePosition({
+        top: rect.height + 4,
+        left: 0,
+      });
+      setShowAutocomplete(true);
+    } else {
+      setShowAutocomplete(false);
+    }
+  };
+
+  const handleAutocompleteSelect = (patternName: string) => {
+    const textarea = patternTextareaRef.current;
+    if (!textarea) return;
+
+    const cursorPos = textarea.selectionStart;
+    const textBeforeCursor = patternStr.substring(0, cursorPos);
+
+    // Find the %{ that triggered autocomplete
+    const match = textBeforeCursor.match(/%\{([A-Z0-9_]*)$/i);
+    if (match) {
+      const startPos = cursorPos - match[0].length;
+      const before = patternStr.substring(0, startPos);
+      const after = patternStr.substring(cursorPos);
+
+      // Insert %{PATTERN:} with cursor before the closing }
+      const insertion = `%{${patternName}:}`;
+      setPatternStr(before + insertion + after);
+
+      // Position cursor before the closing }
+      setTimeout(() => {
+        const newPos = startPos + insertion.length - 1;
+        textarea.selectionStart = textarea.selectionEnd = newPos;
+        textarea.focus();
+      }, 0);
+    }
+
+    setShowAutocomplete(false);
   };
 
   return (
@@ -785,17 +844,34 @@ function PatternModal({
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Pattern
             </label>
-            <textarea
-              value={patternStr}
-              onChange={(e) => setPatternStr(e.target.value)}
-              placeholder={type === 'grok' ? '%{IP:client} - %{USER:user} \\[%{HTTPDATE:timestamp}\\]' : '(?P<client>[\\d.]+) - (?P<user>\\S+)'}
-              required
-              rows={3}
-              className="w-full px-3 py-2 font-mono text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
+            <div className="relative">
+              <textarea
+                ref={patternTextareaRef}
+                value={patternStr}
+                onChange={(e) => setPatternStr(e.target.value)}
+                onKeyUp={handlePatternKeyUp}
+                placeholder={type === 'grok'
+                  ? '%{IP:client_ip} %{USER:username} %{GREEDYDATA:message}'
+                  : '(?P<ip>\\d+\\.\\d+\\.\\d+\\.\\d+) (?P<user>\\w+)'}
+                required
+                rows={3}
+                className="w-full px-3 py-2 font-mono text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+
+              {/* Grok Autocomplete */}
+              {showAutocomplete && type === 'grok' && (
+                <GrokAutocomplete
+                  patterns={builtinPatterns}
+                  filter={autocompleteFilter}
+                  position={autocompletePosition}
+                  onSelect={handleAutocompleteSelect}
+                  onClose={() => setShowAutocomplete(false)}
+                />
+              )}
+            </div>
             {type === 'grok' ? (
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Use %{'{PATTERN:field}'} syntax. See Built-in Grok tab for available patterns.
+                Use %{'{PATTERN:field}'} syntax. Type %{'{'} to trigger autocomplete.
               </p>
             ) : (
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -817,55 +893,58 @@ function PatternModal({
             />
           </div>
 
+          {/* Test Sample with Live Highlighting */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Test Sample (optional)
+              Test Sample
+              {matchLoading && (
+                <span className="ml-2 text-xs text-gray-500">(matching...)</span>
+              )}
             </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={testSample}
-                onChange={(e) => setTestSample(e.target.value)}
-                placeholder="192.168.1.1 - admin [17/Jan/2026:10:00:00 +0000]"
-                className="flex-1 px-3 py-2 font-mono text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-              <button
-                type="button"
-                onClick={handleTest}
-                className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/30"
-              >
-                Test
-              </button>
-            </div>
+            <HighlightedInput
+              value={testSample}
+              onChange={setTestSample}
+              highlights={highlights}
+              placeholder="192.168.1.1 - admin [17/Jan/2026:10:00:00 +0000]"
+              rows={2}
+            />
           </div>
 
-          {testResult && (
-            <div
-              className={`p-3 rounded-md ${
-                testResult.success
-                  ? 'bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200'
-                  : 'bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-200'
-              }`}
-            >
-              {testResult.success ? (
-                <div>
-                  <p className="font-medium">Match successful!</p>
-                  {testResult.matches && Object.keys(testResult.matches).length > 0 && (
-                    <div className="mt-2 text-sm">
-                      <p className="font-medium">Captured fields:</p>
-                      <ul className="mt-1 space-y-1">
-                        {Object.entries(testResult.matches).map(([key, value]) => (
-                          <li key={key} className="font-mono">
-                            <span className="text-blue-600 dark:text-blue-400">{key}</span>: {value}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p>{testResult.error || 'Pattern did not match'}</p>
-              )}
+          {/* Match Results Legend */}
+          {matchResult && matchResult.groups.length > 0 && (
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Captured Groups
+              </label>
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-md p-3 space-y-2">
+                {matchResult.groups.map((group, idx) => (
+                  <div key={group.name} className="flex items-center gap-2 text-sm">
+                    <span
+                      className={`w-3 h-3 rounded ${GROUP_COLORS[idx % GROUP_COLORS.length]}`}
+                    />
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      {group.name}:
+                    </span>
+                    <code className="text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-1 rounded">
+                      {group.value}
+                    </code>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* No match indicator */}
+          {testSample && patternStr && !matchResult && !matchError && !matchLoading && (
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Pattern does not match the test sample
+            </div>
+          )}
+
+          {/* Error display */}
+          {matchError && (
+            <div className="text-sm text-red-600 dark:text-red-400">
+              {matchError}
             </div>
           )}
 

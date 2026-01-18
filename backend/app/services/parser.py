@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import csv
 import json
 import re
@@ -125,9 +127,29 @@ def _detect_logfmt(f) -> bool:
     return lines_matched / lines_checked >= 0.7
 
 
-def parse_preview(file_path: Path, format: FileFormat, limit: int = 100) -> list[dict]:
+def parse_preview(
+    file_path: Path,
+    format: FileFormat,
+    limit: int = 100,
+    multiline_start: str | None = None,
+    multiline_max_lines: int = 100,
+) -> list[dict]:
     """Parse first N records from file for preview."""
     safe_path = _validate_file_path(file_path)
+
+    # Apply multiline merging first for supported formats
+    if multiline_start and format in ("raw", "logfmt"):
+        from app.services.ingestion import merge_multiline
+
+        with open(safe_path, "r", encoding="utf-8") as f:
+            merged = list(merge_multiline(f, multiline_start, multiline_max_lines))
+
+        # Then parse merged lines
+        if format == "raw":
+            return [{"raw_message": line} for line in merged[:limit]]
+        elif format == "logfmt":
+            return [_parse_logfmt_record(line) for line in merged[:limit]]
+
     if format == "json_array":
         return _parse_json_array(safe_path, limit)
     elif format == "ndjson":
@@ -325,6 +347,22 @@ def _parse_syslog(file_path: Path, limit: int) -> list[dict]:
     return records
 
 
+def _parse_logfmt_record(line: str) -> dict:
+    """Parse a single logfmt line into a dict."""
+    # Regex handles: key=value, key="quoted", key='quoted'
+    pattern = re.compile(r'(\w+)=(?:"([^"]*)"|\'([^\']*)\'|(\S+))')
+
+    record = {}
+    for match in pattern.finditer(line):
+        key = match.group(1)
+        # Value is in group 2 (double-quoted), 3 (single-quoted), or 4 (unquoted)
+        value = match.group(2) or match.group(3) or match.group(4)
+        record[key] = value
+
+    # Return record if we found key-value pairs, otherwise raw_message fallback
+    return record if record else {"raw_message": line}
+
+
 def _parse_logfmt(file_path: Path, limit: int) -> list[dict]:
     """Parse logfmt format: key=value key2="quoted value" ..."""
     # Regex handles: key=value, key="quoted", key='quoted'
@@ -361,6 +399,51 @@ def _parse_raw(file_path: Path, limit: int) -> list[dict]:
             records.append({"raw_message": line})
             if len(records) >= limit:
                 break
+    return records
+
+
+def parse_with_pattern(
+    file_path: Path,
+    pattern: dict,
+    limit: int = 100
+) -> list[dict]:
+    """Parse file line-by-line using regex or grok pattern.
+
+    Non-matching lines fallback to {"raw_message": line}.
+    """
+    from app.services.grok_patterns import expand_grok, safe_regex_match
+
+    safe_path = _validate_file_path(file_path)
+
+    # Get regex (expand if grok)
+    if pattern["type"] == "grok":
+        regex_str = expand_grok(pattern["pattern"])
+    else:
+        regex_str = pattern["pattern"]
+
+    try:
+        compiled = re.compile(regex_str)
+    except re.error as e:
+        raise ValueError(f"Invalid pattern: {e}")
+
+    records = []
+    with open(safe_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip('\n\r')
+            if not line:
+                continue
+
+            match = safe_regex_match(compiled, line)
+            if match and match.groupdict():
+                # Pattern matched — use captured groups
+                records.append(match.groupdict())
+            else:
+                # No match — fallback to raw
+                records.append({"raw_message": line})
+
+            if len(records) >= limit:
+                break
+
     return records
 
 

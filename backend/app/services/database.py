@@ -39,7 +39,10 @@ def _init_uploads_table(conn: sqlite3.Connection) -> None:
             created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             error_message   TEXT,
             user_id         TEXT REFERENCES users(id),
-            index_deleted   INTEGER DEFAULT 0
+            index_deleted   INTEGER DEFAULT 0,
+            pattern_id      TEXT,
+            multiline_start TEXT,
+            multiline_max_lines INTEGER DEFAULT 100
         );
 
         CREATE INDEX IF NOT EXISTS idx_uploads_created_at ON uploads(created_at DESC);
@@ -62,6 +65,18 @@ def _init_uploads_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE uploads ADD COLUMN api_key_name TEXT")
     except sqlite3.OperationalError:
         pass  # Column already exists
+
+    # Migration: add pattern_id column if it doesn't exist
+    cursor = conn.execute("PRAGMA table_info(uploads)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if "pattern_id" not in columns:
+        conn.execute("ALTER TABLE uploads ADD COLUMN pattern_id TEXT")
+
+    # Migration: add multiline columns if they don't exist
+    if "multiline_start" not in columns:
+        conn.execute("ALTER TABLE uploads ADD COLUMN multiline_start TEXT")
+    if "multiline_max_lines" not in columns:
+        conn.execute("ALTER TABLE uploads ADD COLUMN multiline_max_lines INTEGER DEFAULT 100")
 
 
 def _init_users_table(conn: sqlite3.Connection) -> None:

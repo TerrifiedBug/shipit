@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import threading
 import time
@@ -18,7 +19,7 @@ from app.models import FieldInfo, IngestRequest, PreviewResponse, UploadResponse
 from app.services import database as db
 from app.services.ingestion import count_records, ingest_file
 from app.services.opensearch import validate_index_name, validate_index_for_ingestion
-from app.services.parser import detect_format, infer_fields, parse_preview, validate_field_count
+from app.services.parser import detect_format, infer_fields, parse_preview, validate_field_count, parse_with_pattern
 from app.services.rate_limit import check_upload_rate_limit
 
 router = APIRouter()
@@ -292,6 +293,8 @@ async def get_preview(upload_id: str):
 async def reparse_upload(
     upload_id: str,
     format: str = Form(...),
+    pattern_id: str | None = Form(None),
+    multiline_start: str | None = Form(None),
     user: dict = Depends(require_auth),
 ):
     """Re-parse uploaded file with a different format."""
@@ -316,19 +319,44 @@ async def reparse_upload(
         raise HTTPException(status_code=404, detail="Uploaded files no longer exist")
 
     # Validate format
-    valid_formats = ["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog", "logfmt", "raw"]
+    valid_formats = ["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog", "logfmt", "raw", "custom"]
     if format not in valid_formats:
         raise HTTPException(status_code=400, detail=f"Invalid format: {format}")
+
+    # Validate multiline pattern if provided
+    if multiline_start:
+        try:
+            re.compile(multiline_start)
+        except re.error as e:
+            raise HTTPException(status_code=400, detail=f"Invalid multiline pattern: {e}")
 
     # Parse with new format
     try:
         combined_preview = []
-        for file_path in existing_paths:
-            preview_records = parse_preview(file_path, format, limit=100)
-            combined_preview.extend(preview_records)
-            if len(combined_preview) >= 100:
-                combined_preview = combined_preview[:100]
-                break
+        if format == "custom":
+            if not pattern_id:
+                raise HTTPException(status_code=400, detail="pattern_id required for custom format")
+
+            pattern = db.get_pattern(pattern_id)
+            if not pattern:
+                raise HTTPException(status_code=404, detail="Pattern not found")
+
+            for file_path in existing_paths:
+                records = parse_with_pattern(file_path, pattern, limit=100)
+                combined_preview.extend(records)
+                if len(combined_preview) >= 100:
+                    combined_preview = combined_preview[:100]
+                    break
+        else:
+            # Existing standard format parsing
+            for file_path in existing_paths:
+                preview_records = parse_preview(
+                    file_path, format, limit=100, multiline_start=multiline_start
+                )
+                combined_preview.extend(preview_records)
+                if len(combined_preview) >= 100:
+                    combined_preview = combined_preview[:100]
+                    break
 
         # Validate field count
         if settings.max_fields_per_document > 0 and combined_preview:
@@ -344,7 +372,7 @@ async def reparse_upload(
         fields = infer_fields(combined_preview)
 
         # Update upload record with new format
-        db.update_upload(safe_id, file_format=format)
+        db.update_upload(safe_id, file_format=format, pattern_id=pattern_id, multiline_start=multiline_start)
 
         # Update cache
         _upload_cache[safe_id] = {
@@ -356,6 +384,8 @@ async def reparse_upload(
         return {
             "upload_id": safe_id,
             "file_format": format,
+            "pattern_id": pattern_id,
+            "multiline_start": multiline_start,
             "preview": combined_preview[:100],
             "fields": [{"name": f["name"], "type": f["type"]} for f in fields],
         }
@@ -378,6 +408,9 @@ def _run_ingestion_task(
     user_id: str | None = None,
     include_filename: bool = False,
     filename_field: str = "source_file",
+    pattern: dict | None = None,
+    multiline_start: str | None = None,
+    multiline_max_lines: int = 100,
 ):
     """Run ingestion in a background thread."""
     start_time = time.time()
@@ -429,6 +462,9 @@ def _run_ingestion_task(
                 progress_callback=progress_callback,
                 include_filename=include_filename,
                 filename_field=filename_field,
+                pattern=pattern,
+                multiline_start=multiline_start,
+                multiline_max_lines=multiline_max_lines,
             )
 
             # Accumulate totals after each file
@@ -528,8 +564,22 @@ async def start_ingest(upload_id: str, request: IngestRequest, http_request: Req
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Get pattern if using custom format
+    pattern = None
+    if upload.get("pattern_id"):
+        pattern = db.get_pattern(upload["pattern_id"])
+
     # Count total records across all files for progress tracking
-    total_records = sum(count_records(fp, upload["file_format"]) for fp in existing_paths)
+    total_records = sum(
+        count_records(
+            fp,
+            upload["file_format"],
+            pattern,
+            request.multiline_start,
+            request.multiline_max_lines,
+        )
+        for fp in existing_paths
+    )
 
     # Update database with ingestion config
     db.start_ingestion(
@@ -574,6 +624,9 @@ async def start_ingest(upload_id: str, request: IngestRequest, http_request: Req
             user_id,
             request.include_filename,
             request.filename_field,
+            pattern,
+            request.multiline_start,
+            request.multiline_max_lines,
         ),
         daemon=True,
     )
