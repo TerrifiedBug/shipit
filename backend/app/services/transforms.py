@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import logging
 import re
 import urllib.parse
@@ -169,6 +170,45 @@ def _default(value: Any, default_value: str = "", **_) -> Any:
     return value
 
 
+def _parse_json(value: Any, path: str = "", **_) -> Any:
+    """Parse JSON string and optionally extract a value by path."""
+    if not isinstance(value, str):
+        return value
+
+    try:
+        parsed = json.loads(value)
+
+        if not path:
+            return parsed
+
+        # Navigate the path
+        current = parsed
+        for key in path.split("."):
+            if isinstance(current, dict) and key in current:
+                current = current[key]
+            else:
+                return value  # Path not found, return original
+
+        return current
+    except json.JSONDecodeError:
+        return value
+
+
+def _parse_kv(value: Any, delimiter: str = " ", separator: str = "=", **_) -> Any:
+    """Parse key=value pairs into a dictionary."""
+    if not isinstance(value, str):
+        return value
+
+    result = {}
+    pairs = value.split(delimiter)
+    for pair in pairs:
+        if separator in pair:
+            key, val = pair.split(separator, 1)
+            result[key.strip()] = val.strip()
+
+    return result if result else value
+
+
 TRANSFORMS = {
     "lowercase": _lowercase,
     "uppercase": _uppercase,
@@ -182,4 +222,6 @@ TRANSFORMS = {
     "mask_email": _mask_email,
     "mask_ip": _mask_ip,
     "default": _default,
+    "parse_json": _parse_json,
+    "parse_kv": _parse_kv,
 }

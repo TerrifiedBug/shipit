@@ -160,3 +160,25 @@ class TestConditionalTransforms:
         """default should replace empty strings."""
         result = apply_transform("", "default", default_value="unknown")
         assert result == "unknown"
+
+
+class TestParsingTransforms:
+    def test_parse_json(self):
+        """parse_json should extract value from JSON string."""
+        result = apply_transform('{"name": "Alice", "age": 30}', "parse_json", path="name")
+        assert result == "Alice"
+
+    def test_parse_json_nested(self):
+        """parse_json should handle nested paths."""
+        result = apply_transform('{"user": {"name": "Alice"}}', "parse_json", path="user.name")
+        assert result == "Alice"
+
+    def test_parse_json_invalid(self):
+        """parse_json with invalid JSON should return original."""
+        result = apply_transform("not json", "parse_json", path="name")
+        assert result == "not json"
+
+    def test_parse_kv(self):
+        """parse_kv should parse key=value pairs into dict."""
+        result = apply_transform("a=1 b=2 c=3", "parse_kv")
+        assert result == {"a": "1", "b": "2", "c": "3"}
