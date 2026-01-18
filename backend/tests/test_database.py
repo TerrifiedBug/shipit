@@ -438,3 +438,157 @@ class TestApiUploadTracking:
         assert upload["upload_method"] == "api"
         assert upload["api_key_name"] is None
         assert upload["user_id"] == user["id"]
+
+
+class TestChunkedUploads:
+    def test_create_chunked_upload(self, temp_db):
+        """Should create a chunked upload record."""
+        from app.services.database import create_chunked_upload, get_chunked_upload
+
+        result = create_chunked_upload(
+            filename="large.json",
+            file_size=5_000_000_000,  # 5GB
+            chunk_size=10_485_760,     # 10MB
+            total_chunks=477,
+            user_id="test-user"
+        )
+
+        assert result["filename"] == "large.json"
+        assert result["total_chunks"] == 477
+        assert result["completed_chunks"] == []
+
+        # Verify it's retrievable
+        retrieved = get_chunked_upload(result["id"])
+        assert retrieved is not None
+        assert retrieved["filename"] == "large.json"
+
+    def test_mark_chunk_complete(self, temp_db):
+        """Should mark individual chunks as complete."""
+        from app.services.database import (
+            create_chunked_upload, mark_chunk_complete, get_chunked_upload
+        )
+
+        upload = create_chunked_upload(
+            filename="test.json",
+            file_size=100_000_000,
+            chunk_size=10_000_000,
+            total_chunks=10,
+            user_id="test-user"
+        )
+
+        mark_chunk_complete(upload["id"], 0)
+        mark_chunk_complete(upload["id"], 5)
+
+        retrieved = get_chunked_upload(upload["id"])
+        assert 0 in retrieved["completed_chunks"]
+        assert 5 in retrieved["completed_chunks"]
+        assert len(retrieved["completed_chunks"]) == 2
+
+    def test_mark_chunk_complete_invalid_index(self, temp_db):
+        """Should raise error for invalid chunk index."""
+        from app.services.database import create_chunked_upload, mark_chunk_complete
+
+        upload = create_chunked_upload(
+            filename="test.json",
+            file_size=100_000_000,
+            chunk_size=10_000_000,
+            total_chunks=10,
+            user_id="test-user"
+        )
+
+        with pytest.raises(ValueError):
+            mark_chunk_complete(upload["id"], -1)
+
+        with pytest.raises(ValueError):
+            mark_chunk_complete(upload["id"], 10)  # out of bounds
+
+    def test_mark_chunk_complete_nonexistent_upload(self, temp_db):
+        """Should raise error for nonexistent upload."""
+        from app.services.database import mark_chunk_complete
+
+        with pytest.raises(ValueError):
+            mark_chunk_complete("nonexistent-id", 0)
+
+    def test_mark_chunk_complete_idempotent(self, temp_db):
+        """Marking the same chunk twice should be idempotent."""
+        from app.services.database import create_chunked_upload, mark_chunk_complete, get_chunked_upload
+
+        upload = create_chunked_upload(
+            filename="test.json",
+            file_size=100_000_000,
+            chunk_size=10_000_000,
+            total_chunks=10,
+            user_id="test-user"
+        )
+
+        mark_chunk_complete(upload["id"], 0)
+        mark_chunk_complete(upload["id"], 0)  # Should not error
+
+        retrieved = get_chunked_upload(upload["id"])
+        assert retrieved["completed_chunks"] == [0]  # Still just one entry
+
+    def test_update_chunked_upload_status(self, temp_db):
+        """Should update upload status."""
+        from app.services.database import create_chunked_upload, update_chunked_upload_status, get_chunked_upload
+
+        upload = create_chunked_upload(
+            filename="test.json",
+            file_size=100_000_000,
+            chunk_size=10_000_000,
+            total_chunks=10,
+            user_id="test-user"
+        )
+
+        update_chunked_upload_status(upload["id"], "completed")
+
+        retrieved = get_chunked_upload(upload["id"])
+        assert retrieved["status"] == "completed"
+
+    def test_update_chunked_upload_status_invalid(self, temp_db):
+        """Should raise error for invalid status."""
+        from app.services.database import create_chunked_upload, update_chunked_upload_status
+
+        upload = create_chunked_upload(
+            filename="test.json",
+            file_size=100_000_000,
+            chunk_size=10_000_000,
+            total_chunks=10,
+            user_id="test-user"
+        )
+
+        with pytest.raises(ValueError):
+            update_chunked_upload_status(upload["id"], "invalid-status")
+
+    def test_update_chunked_upload_status_nonexistent(self, temp_db):
+        """Should raise error for nonexistent upload."""
+        from app.services.database import update_chunked_upload_status
+
+        with pytest.raises(ValueError):
+            update_chunked_upload_status("nonexistent-id", "completed")
+
+    def test_cleanup_expired_chunked_uploads(self, temp_db):
+        """Should delete expired uploads."""
+        from app.services.database import create_chunked_upload, cleanup_expired_chunked_uploads, get_chunked_upload, get_connection
+
+        # Create an upload with normal retention
+        upload = create_chunked_upload(
+            filename="test.json",
+            file_size=100_000_000,
+            chunk_size=10_000_000,
+            total_chunks=10,
+            user_id="test-user",
+            retention_hours=24
+        )
+
+        # Manually set expires_at to the past using SQLite's datetime function
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE chunked_uploads SET expires_at = datetime('now', '-1 hour') WHERE id = ?",
+                (upload["id"],)
+            )
+
+        # Now cleanup should delete it
+        deleted = cleanup_expired_chunked_uploads()
+
+        assert deleted >= 1
+        assert get_chunked_upload(upload["id"]) is None

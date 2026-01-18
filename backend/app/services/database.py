@@ -254,6 +254,25 @@ def _init_grok_patterns_table(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_grok_patterns_name ON grok_patterns(name)")
 
 
+def _init_chunked_uploads_table(conn: sqlite3.Connection) -> None:
+    """Create chunked_uploads table for resumable large file uploads."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chunked_uploads (
+            id TEXT PRIMARY KEY,
+            filename TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            chunk_size INTEGER NOT NULL,
+            total_chunks INTEGER NOT NULL,
+            completed_chunks TEXT DEFAULT '[]',
+            user_id TEXT NOT NULL,
+            status TEXT DEFAULT 'uploading',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_chunked_expires ON chunked_uploads(expires_at)")
+
+
 def init_db() -> None:
     """Initialize the database schema."""
     with get_connection() as conn:
@@ -266,6 +285,7 @@ def init_db() -> None:
         _init_sessions_table(conn)
         _init_patterns_table(conn)
         _init_grok_patterns_table(conn)
+        _init_chunked_uploads_table(conn)
 
 
 @contextmanager
@@ -1294,3 +1314,121 @@ def delete_grok_pattern(pattern_id: str) -> bool:
             "DELETE FROM grok_patterns WHERE id = ?", (pattern_id,)
         )
         return cursor.rowcount > 0
+
+
+# Chunked upload functions (for resumable large file uploads)
+
+
+def create_chunked_upload(
+    filename: str,
+    file_size: int,
+    chunk_size: int,
+    total_chunks: int,
+    user_id: str,
+    retention_hours: int = 24,
+) -> dict[str, Any]:
+    """Create a new chunked upload record."""
+    upload_id = str(uuid.uuid4())
+    expires_at = datetime.now() + timedelta(hours=retention_hours)
+
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO chunked_uploads
+               (id, filename, file_size, chunk_size, total_chunks, user_id, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (upload_id, filename, file_size, chunk_size, total_chunks, user_id, expires_at),
+        )
+
+    return get_chunked_upload(upload_id)
+
+
+def get_chunked_upload(upload_id: str) -> Optional[dict[str, Any]]:
+    """Get a chunked upload by ID."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT * FROM chunked_uploads WHERE id = ?",
+            (upload_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            result = dict(row)
+            result["completed_chunks"] = json.loads(result["completed_chunks"])
+            return result
+    return None
+
+
+def mark_chunk_complete(upload_id: str, chunk_index: int) -> bool:
+    """Mark a chunk as completed.
+
+    Args:
+        upload_id: The chunked upload ID
+        chunk_index: Index of the chunk to mark complete (0-based)
+
+    Returns:
+        True if successful
+
+    Raises:
+        ValueError: If upload doesn't exist or chunk_index is invalid
+    """
+    with get_connection() as conn:
+        # Get upload with a write lock to prevent race conditions
+        cursor = conn.execute(
+            "SELECT total_chunks, completed_chunks FROM chunked_uploads WHERE id = ?",
+            (upload_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError(f"Chunked upload not found: {upload_id}")
+
+        total_chunks = row["total_chunks"]
+        if chunk_index < 0 or chunk_index >= total_chunks:
+            raise ValueError(f"Invalid chunk_index {chunk_index} for upload with {total_chunks} chunks")
+
+        completed = set(json.loads(row["completed_chunks"]))
+        completed.add(chunk_index)
+
+        conn.execute(
+            "UPDATE chunked_uploads SET completed_chunks = ? WHERE id = ?",
+            (json.dumps(sorted(completed)), upload_id),
+        )
+    return True
+
+
+def update_chunked_upload_status(upload_id: str, status: str) -> bool:
+    """Update the status of a chunked upload.
+
+    Args:
+        upload_id: The chunked upload ID
+        status: New status ('uploading', 'completed', 'failed', 'expired')
+
+    Returns:
+        True if successful
+
+    Raises:
+        ValueError: If upload doesn't exist or status is invalid
+    """
+    valid_statuses = ('uploading', 'completed', 'failed', 'expired')
+    if status not in valid_statuses:
+        raise ValueError(f"Invalid status: {status}. Must be one of {valid_statuses}")
+
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "UPDATE chunked_uploads SET status = ? WHERE id = ?",
+            (status, upload_id),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"Chunked upload not found: {upload_id}")
+    return True
+
+
+def cleanup_expired_chunked_uploads() -> int:
+    """Delete expired chunked upload records.
+
+    Returns:
+        Number of records deleted
+    """
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM chunked_uploads WHERE expires_at < datetime('now')"
+        )
+        return cursor.rowcount
