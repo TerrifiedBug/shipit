@@ -948,7 +948,7 @@ async def get_chunked_upload_status(upload_id: str):
         "upload_id": safe_id,
         "filename": upload["filename"],
         "total_chunks": upload["total_chunks"],
-        "completed_chunks": len(upload["completed_chunks"]),
+        "completed_chunks": upload["completed_chunks"],  # Return array for resume support
         "status": upload["status"],
     }
 
