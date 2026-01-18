@@ -207,13 +207,43 @@ def apply_field_mappings(
     return result
 
 
+def _stream_with_pattern(
+    file_path: Path,
+    pattern: dict,
+) -> Iterator[dict[str, Any]]:
+    """Stream records parsed with regex/grok pattern."""
+    from app.services.grok_patterns import expand_grok, safe_regex_match
+
+    if pattern["type"] == "grok":
+        regex_str = expand_grok(pattern["pattern"])
+    else:
+        regex_str = pattern["pattern"]
+
+    compiled = re.compile(regex_str)
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip('\n\r')
+            if not line:
+                continue
+
+            match = safe_regex_match(compiled, line)
+            if match and match.groupdict():
+                yield match.groupdict()
+            else:
+                yield {"raw_message": line}
+
+
 def stream_records(
     file_path: Path,
     file_format: str,
+    pattern: dict | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Stream records from a file without loading all into memory."""
+    """Stream records from a file, optionally using custom pattern."""
     safe_path = _validate_file_path(file_path)
-    if file_format == "json_array":
+    if file_format == "custom" and pattern:
+        yield from _stream_with_pattern(safe_path, pattern)
+    elif file_format == "json_array":
         yield from _stream_json_array(safe_path)
     elif file_format == "ndjson":
         yield from _stream_ndjson(safe_path)
@@ -387,10 +417,10 @@ def _stream_raw(file_path: Path) -> Iterator[dict[str, Any]]:
             yield {"raw_message": line.rstrip('\n\r')}
 
 
-def count_records(file_path: Path, file_format: str) -> int:
+def count_records(file_path: Path, file_format: str, pattern: dict | None = None) -> int:
     """Count total records in a file."""
     count = 0
-    for _ in stream_records(file_path, file_format):
+    for _ in stream_records(file_path, file_format, pattern):
         count += 1
     return count
 
@@ -424,13 +454,14 @@ def ingest_file(
     progress_callback: Callable[[int, int, int], None] | None = None,
     include_filename: bool = False,
     filename_field: str = "source_file",
+    pattern: dict | None = None,
 ) -> IngestionResult:
     """
     Ingest a file into OpenSearch.
 
     Args:
         file_path: Path to the file to ingest
-        file_format: Format of the file (json_array, ndjson, csv)
+        file_format: Format of the file (json_array, ndjson, csv, custom)
         index_name: Full index name (with prefix already applied)
         field_mappings: Optional dict mapping original field names to new names
         excluded_fields: Optional list of fields to exclude
@@ -439,6 +470,7 @@ def ingest_file(
         progress_callback: Optional callback(processed, success, failed) for progress updates
         include_filename: Whether to add source filename to each record
         filename_field: Name of the field to use for filename (default: _source_file)
+        pattern: Optional pattern dict for custom format parsing
 
     Returns:
         IngestionResult with counts and any failed records
@@ -453,7 +485,7 @@ def ingest_file(
     failures_dir = Path(settings.data_dir) / "failures"
     failures_dir.mkdir(parents=True, exist_ok=True)
 
-    for record in stream_records(file_path, file_format):
+    for record in stream_records(file_path, file_format, pattern):
         # Add source filename if requested
         if include_filename:
             record[filename_field] = file_path.name

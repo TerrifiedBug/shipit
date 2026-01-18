@@ -396,6 +396,7 @@ def _run_ingestion_task(
     user_id: str | None = None,
     include_filename: bool = False,
     filename_field: str = "source_file",
+    pattern: dict | None = None,
 ):
     """Run ingestion in a background thread."""
     start_time = time.time()
@@ -447,6 +448,7 @@ def _run_ingestion_task(
                 progress_callback=progress_callback,
                 include_filename=include_filename,
                 filename_field=filename_field,
+                pattern=pattern,
             )
 
             # Accumulate totals after each file
@@ -546,8 +548,13 @@ async def start_ingest(upload_id: str, request: IngestRequest, http_request: Req
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Get pattern if using custom format
+    pattern = None
+    if upload.get("pattern_id"):
+        pattern = db.get_pattern(upload["pattern_id"])
+
     # Count total records across all files for progress tracking
-    total_records = sum(count_records(fp, upload["file_format"]) for fp in existing_paths)
+    total_records = sum(count_records(fp, upload["file_format"], pattern) for fp in existing_paths)
 
     # Update database with ingestion config
     db.start_ingestion(
@@ -592,6 +599,7 @@ async def start_ingest(upload_id: str, request: IngestRequest, http_request: Req
             user_id,
             request.include_filename,
             request.filename_field,
+            pattern,
         ),
         daemon=True,
     )
