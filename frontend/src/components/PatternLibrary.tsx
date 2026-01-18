@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   BuiltinGrokPattern,
   GrokPattern,
@@ -18,6 +18,7 @@ import {
 import { useToast } from '../contexts/ToastContext';
 import { HighlightedInput, GROUP_COLORS, Highlight } from './HighlightedInput';
 import { usePatternMatch } from '../hooks/usePatternMatch';
+import { GrokAutocomplete } from './GrokAutocomplete';
 
 interface PatternLibraryProps {
   onClose: () => void;
@@ -669,6 +670,18 @@ export function PatternModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Autocomplete state
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [autocompleteFilter, setAutocompleteFilter] = useState('');
+  const [autocompletePosition, setAutocompletePosition] = useState({ top: 0, left: 0 });
+  const patternTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [builtinPatterns, setBuiltinPatterns] = useState<BuiltinGrokPattern[]>([]);
+
+  // Load builtin patterns for autocomplete
+  useEffect(() => {
+    listBuiltinGrokPatterns().then(setBuiltinPatterns).catch(console.error);
+  }, []);
+
   // Live pattern matching
   const { result: matchResult, error: matchError, loading: matchLoading } = usePatternMatch(
     patternStr,
@@ -725,6 +738,59 @@ export function PatternModal({
     }
   };
 
+  // Autocomplete trigger logic
+  const handlePatternKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget;
+    const cursorPos = textarea.selectionStart;
+    const textBeforeCursor = textarea.value.substring(0, cursorPos);
+
+    // Check if we're typing a grok pattern: %{...
+    const match = textBeforeCursor.match(/%\{([A-Z0-9_]*)$/i);
+
+    if (match && type === 'grok') {
+      setAutocompleteFilter(match[1]);
+
+      // Calculate position (simplified - position below textarea)
+      const rect = textarea.getBoundingClientRect();
+      setAutocompletePosition({
+        top: rect.height + 4,
+        left: 0,
+      });
+      setShowAutocomplete(true);
+    } else {
+      setShowAutocomplete(false);
+    }
+  };
+
+  const handleAutocompleteSelect = (patternName: string) => {
+    const textarea = patternTextareaRef.current;
+    if (!textarea) return;
+
+    const cursorPos = textarea.selectionStart;
+    const textBeforeCursor = patternStr.substring(0, cursorPos);
+
+    // Find the %{ that triggered autocomplete
+    const match = textBeforeCursor.match(/%\{([A-Z0-9_]*)$/i);
+    if (match) {
+      const startPos = cursorPos - match[0].length;
+      const before = patternStr.substring(0, startPos);
+      const after = patternStr.substring(cursorPos);
+
+      // Insert %{PATTERN:} with cursor before the closing }
+      const insertion = `%{${patternName}:}`;
+      setPatternStr(before + insertion + after);
+
+      // Position cursor before the closing }
+      setTimeout(() => {
+        const newPos = startPos + insertion.length - 1;
+        textarea.selectionStart = textarea.selectionEnd = newPos;
+        textarea.focus();
+      }, 0);
+    }
+
+    setShowAutocomplete(false);
+  };
+
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]"
@@ -778,17 +844,34 @@ export function PatternModal({
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Pattern
             </label>
-            <textarea
-              value={patternStr}
-              onChange={(e) => setPatternStr(e.target.value)}
-              placeholder={type === 'grok' ? '%{IP:client} - %{USER:user} \\[%{HTTPDATE:timestamp}\\]' : '(?P<client>[\\d.]+) - (?P<user>\\S+)'}
-              required
-              rows={3}
-              className="w-full px-3 py-2 font-mono text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
+            <div className="relative">
+              <textarea
+                ref={patternTextareaRef}
+                value={patternStr}
+                onChange={(e) => setPatternStr(e.target.value)}
+                onKeyUp={handlePatternKeyUp}
+                placeholder={type === 'grok'
+                  ? '%{IP:client_ip} %{USER:username} %{GREEDYDATA:message}'
+                  : '(?P<ip>\\d+\\.\\d+\\.\\d+\\.\\d+) (?P<user>\\w+)'}
+                required
+                rows={3}
+                className="w-full px-3 py-2 font-mono text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+
+              {/* Grok Autocomplete */}
+              {showAutocomplete && type === 'grok' && (
+                <GrokAutocomplete
+                  patterns={builtinPatterns}
+                  filter={autocompleteFilter}
+                  position={autocompletePosition}
+                  onSelect={handleAutocompleteSelect}
+                  onClose={() => setShowAutocomplete(false)}
+                />
+              )}
+            </div>
             {type === 'grok' ? (
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Use %{'{PATTERN:field}'} syntax. See Built-in Grok tab for available patterns.
+                Use %{'{PATTERN:field}'} syntax. Type %{'{'} to trigger autocomplete.
               </p>
             ) : (
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
