@@ -22,6 +22,8 @@ from app.services import database as db
 from app.services.ingestion import count_records, ingest_file
 from app.services.opensearch import validate_index_name, validate_index_for_ingestion
 from app.services.parser import detect_format, infer_fields, parse_preview, validate_field_count, parse_with_pattern, validate_format, FormatValidationError
+from app.services.ecs import suggest_ecs_mappings
+from app.services.geoip import is_geoip_available
 from app.services.rate_limit import check_upload_rate_limit
 
 router = APIRouter()
@@ -309,6 +311,28 @@ async def get_preview(upload_id: str):
     )
 
 
+@router.post("/upload/{upload_id}/suggest-ecs")
+async def suggest_ecs_fields(upload_id: str):
+    """Suggest ECS field mappings for the uploaded data."""
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    # Get field names from the cache (fields are stored there, not in DB)
+    cache = _upload_cache.get(safe_id)
+    if not cache or "fields" not in cache:
+        raise HTTPException(status_code=404, detail="Upload preview data not found. Please re-upload the file.")
+
+    field_names = [f["name"] for f in cache.get("fields", [])]
+    suggestions = suggest_ecs_mappings(field_names)
+
+    return {
+        "suggestions": suggestions,
+        "geoip_available": is_geoip_available(),
+    }
+
+
 @router.post("/upload/{upload_id}/reparse")
 async def reparse_upload(
     upload_id: str,
@@ -452,6 +476,7 @@ def _run_ingestion_task(
     multiline_start: str | None = None,
     multiline_max_lines: int = 100,
     field_transforms: dict | None = None,
+    geoip_fields: list[str] | None = None,
 ):
     """Run ingestion in a background thread."""
     start_time = time.time()
@@ -507,6 +532,7 @@ def _run_ingestion_task(
                 multiline_start=multiline_start,
                 multiline_max_lines=multiline_max_lines,
                 field_transforms=field_transforms,
+                geoip_fields=geoip_fields,
             )
 
             # Accumulate totals after each file
@@ -678,6 +704,7 @@ async def start_ingest(upload_id: str, request: IngestRequest, http_request: Req
             request.multiline_start,
             request.multiline_max_lines,
             field_transforms_dict,
+            request.geoip_fields,
         ),
         daemon=True,
     )

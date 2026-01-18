@@ -11,6 +11,7 @@ import ijson
 from dateutil import parser as dateutil_parser
 
 from app.config import settings
+from app.services.geoip import enrich_ip
 from app.services.opensearch import bulk_index
 from app.services.transforms import apply_transforms
 
@@ -229,8 +230,9 @@ def apply_field_mappings(
     timestamp_field: str | None = None,
     field_types: dict[str, str] | None = None,
     field_transforms: dict[str, list[dict]] | None = None,
+    geoip_fields: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Apply field mappings, exclusions, type coercion, and timestamp processing to a record."""
+    """Apply field mappings, exclusions, transforms, GeoIP, type coercion, and timestamp processing."""
     result = {}
 
     for key, value in record.items():
@@ -240,6 +242,14 @@ def apply_field_mappings(
         # Apply transforms BEFORE mapping (transforms use original field names)
         if field_transforms and key in field_transforms:
             value = apply_transforms(value, field_transforms[key])
+
+        # Apply GeoIP enrichment (before mapping, on original field name)
+        if geoip_fields and key in geoip_fields:
+            geo_data = enrich_ip(str(value)) if value else None
+            if geo_data:
+                # Add geo fields with suffix based on mapped name
+                mapped_key = field_mappings.get(key, key)
+                result[f"{mapped_key}_geo"] = geo_data
 
         # Apply mapping if exists, otherwise keep original name
         new_key = field_mappings.get(key, key)
@@ -575,6 +585,7 @@ def ingest_file(
     multiline_start: str | None = None,
     multiline_max_lines: int = 100,
     field_transforms: dict[str, list[dict]] | None = None,
+    geoip_fields: list[str] | None = None,
 ) -> IngestionResult:
     """
     Ingest a file into OpenSearch.
@@ -594,6 +605,7 @@ def ingest_file(
         multiline_start: Optional regex pattern marking the start of a new record
         multiline_max_lines: Maximum lines to merge before forcing flush (default: 100)
         field_transforms: Optional dict mapping field names to list of transforms to apply
+        geoip_fields: Optional list of field names to enrich with GeoIP data
 
     Returns:
         IngestionResult with counts and any failed records
@@ -613,9 +625,9 @@ def ingest_file(
         if include_filename:
             record[filename_field] = file_path.name
 
-        # Apply field mappings, timestamp processing, type coercion, and transforms
+        # Apply field mappings, timestamp processing, type coercion, transforms, and GeoIP
         mapped_record = apply_field_mappings(
-            record, field_mappings, excluded_fields, timestamp_field, field_types, field_transforms
+            record, field_mappings, excluded_fields, timestamp_field, field_types, field_transforms, geoip_fields
         )
         batch.append(mapped_record)
 

@@ -383,3 +383,149 @@ class TestFieldTransforms:
         records = call_args[0][1]
         assert all(r["name"].isupper() for r in records)
         assert records[0]["name"] == "ALICE"
+
+
+class TestGeoIPIntegration:
+    """Tests for GeoIP integration in ingestion pipeline."""
+
+    def test_geoip_enrichment_adds_geo_field(self):
+        """GeoIP enrichment should add _geo field."""
+        from unittest.mock import patch
+        from app.services.ingestion import apply_field_mappings
+
+        # Mock GeoIP as available and returning data
+        with patch('app.services.ingestion.enrich_ip') as mock_enrich:
+            mock_enrich.return_value = {
+                "country_name": "United States",
+                "city_name": "San Francisco",
+                "location": {"lat": 37.77, "lon": -122.41}
+            }
+
+            result = apply_field_mappings(
+                {"src_ip": "8.8.8.8", "message": "test"},
+                {},  # no mappings
+                [],  # no exclusions
+                geoip_fields=["src_ip"]
+            )
+
+            assert "src_ip" in result
+            assert "src_ip_geo" in result
+            assert result["src_ip_geo"]["country_name"] == "United States"
+
+    def test_geoip_enrichment_respects_field_mapping(self):
+        """GeoIP enrichment should use mapped field name for _geo suffix."""
+        from unittest.mock import patch
+        from app.services.ingestion import apply_field_mappings
+
+        with patch('app.services.ingestion.enrich_ip') as mock_enrich:
+            mock_enrich.return_value = {"country_name": "US"}
+
+            result = apply_field_mappings(
+                {"client_ip": "8.8.8.8"},
+                {"client_ip": "source.ip"},  # mapping
+                [],
+                geoip_fields=["client_ip"]
+            )
+
+            # Should use mapped name for geo field
+            assert "source.ip_geo" in result
+            assert "source.ip" in result
+            assert "client_ip" not in result
+
+    def test_geoip_enrichment_skipped_when_not_in_list(self):
+        """GeoIP enrichment should only apply to fields in geoip_fields."""
+        from unittest.mock import patch
+        from app.services.ingestion import apply_field_mappings
+
+        with patch('app.services.ingestion.enrich_ip') as mock_enrich:
+            result = apply_field_mappings(
+                {"ip": "8.8.8.8"},
+                {},
+                [],
+                geoip_fields=[]  # Empty list
+            )
+
+            mock_enrich.assert_not_called()
+            assert "ip_geo" not in result
+
+    def test_geoip_enrichment_skipped_when_none(self):
+        """GeoIP enrichment should be skipped when geoip_fields is None."""
+        from unittest.mock import patch
+        from app.services.ingestion import apply_field_mappings
+
+        with patch('app.services.ingestion.enrich_ip') as mock_enrich:
+            result = apply_field_mappings(
+                {"ip": "8.8.8.8"},
+                {},
+                [],
+                geoip_fields=None
+            )
+
+            mock_enrich.assert_not_called()
+            assert "ip_geo" not in result
+
+    def test_geoip_enrichment_skipped_for_none_value(self):
+        """GeoIP enrichment should not add _geo field when value is None."""
+        from unittest.mock import patch
+        from app.services.ingestion import apply_field_mappings
+
+        with patch('app.services.ingestion.enrich_ip') as mock_enrich:
+            result = apply_field_mappings(
+                {"src_ip": None, "message": "test"},
+                {},
+                [],
+                geoip_fields=["src_ip"]
+            )
+
+            mock_enrich.assert_not_called()
+            assert "src_ip_geo" not in result
+
+    def test_geoip_enrichment_skipped_when_enrich_returns_none(self):
+        """GeoIP enrichment should not add _geo field when enrich_ip returns None."""
+        from unittest.mock import patch
+        from app.services.ingestion import apply_field_mappings
+
+        with patch('app.services.ingestion.enrich_ip') as mock_enrich:
+            mock_enrich.return_value = None  # Lookup failed
+
+            result = apply_field_mappings(
+                {"src_ip": "invalid_ip"},
+                {},
+                [],
+                geoip_fields=["src_ip"]
+            )
+
+            mock_enrich.assert_called_once_with("invalid_ip")
+            assert "src_ip_geo" not in result
+            assert "src_ip" in result
+
+    @patch("app.services.ingestion.bulk_index")
+    @patch("app.services.ingestion.enrich_ip")
+    def test_ingest_file_with_geoip_fields(self, mock_enrich, mock_bulk_index, json_array_file, temp_dir):
+        """Test that ingest_file passes geoip_fields to apply_field_mappings."""
+        import json
+
+        # Create a test file with IP addresses
+        file_path = temp_dir / "ip_test.json"
+        data = [
+            {"src_ip": "8.8.8.8", "message": "test1"},
+            {"src_ip": "1.1.1.1", "message": "test2"},
+        ]
+        file_path.write_text(json.dumps(data))
+
+        mock_bulk_index.return_value = {"success": 2, "failed": []}
+        mock_enrich.return_value = {"country_name": "US", "city_name": "Test"}
+
+        result = ingest_file(
+            file_path=file_path,
+            file_format="json_array",
+            index_name="shipit-test",
+            geoip_fields=["src_ip"],
+        )
+
+        assert result.processed == 2
+        # Check that GeoIP enrichment was applied
+        call_args = mock_bulk_index.call_args
+        records = call_args[0][1]
+        assert all("src_ip_geo" in r for r in records)
+        assert records[0]["src_ip_geo"]["country_name"] == "US"

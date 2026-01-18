@@ -57,6 +57,8 @@ class IngestRequest(BaseModel):
     filename_field: str = "source_file"
     multiline_start: str | None = None
     multiline_max_lines: int = 100
+    geoip_fields: list[str] = []  # Fields to enrich with GeoIP
+    apply_ecs_mapping: bool = False  # Auto-apply ECS field mappings
 
 
 class IngestResponse(BaseModel):
