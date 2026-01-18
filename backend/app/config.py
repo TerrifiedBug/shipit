@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     oidc_allowed_domain: Optional[str] = None
     oidc_admin_group: Optional[str] = None
 
+    # GeoIP settings
+    maxmind_license_key: str | None = None
+
     class Config:
         env_file = ".env"
 
