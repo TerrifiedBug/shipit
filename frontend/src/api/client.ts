@@ -834,3 +834,24 @@ export async function deleteGrokPattern(patternId: string): Promise<void> {
     throw new Error(error.detail || 'Failed to delete grok pattern');
   }
 }
+
+// Grok pattern expansion
+export interface GrokExpandResponse {
+  expanded: string | null;
+  groups: string[];
+  valid: boolean;
+  error?: string;
+}
+
+export async function expandGrokPattern(pattern: string): Promise<GrokExpandResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/patterns/grok/expand?pattern=${encodeURIComponent(pattern)}`,
+    {
+      credentials: 'include',
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to expand grok pattern');
+  }
+  return response.json();
+}
