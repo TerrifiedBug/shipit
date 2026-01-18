@@ -109,3 +109,20 @@ class TestRegexTransforms:
         """Empty replacement should remove matches."""
         result = apply_transform("hello123world", "regex_replace", pattern=r"\d+", replacement="")
         assert result == "helloworld"
+
+
+class TestEncodingTransforms:
+    def test_base64_decode(self):
+        """base64_decode should decode base64 strings."""
+        result = apply_transform("aGVsbG8gd29ybGQ=", "base64_decode")
+        assert result == "hello world"
+
+    def test_base64_decode_invalid(self):
+        """base64_decode with invalid input should return original."""
+        result = apply_transform("not valid base64!!!", "base64_decode")
+        assert result == "not valid base64!!!"
+
+    def test_url_decode(self):
+        """url_decode should decode URL-encoded strings."""
+        result = apply_transform("hello%20world%21", "url_decode")
+        assert result == "hello world!"

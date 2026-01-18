@@ -2,8 +2,10 @@
 """Field transformation functions for data ingestion."""
 from __future__ import annotations
 
+import base64
 import logging
 import re
+import urllib.parse
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -101,6 +103,24 @@ def _truncate(value: Any, max_length: int = 100, **_) -> Any:
     return value[:max_length]
 
 
+def _base64_decode(value: Any, **_) -> Any:
+    """Decode base64 string."""
+    if not isinstance(value, str):
+        return value
+    try:
+        decoded = base64.b64decode(value).decode("utf-8")
+        return decoded
+    except Exception:
+        return value
+
+
+def _url_decode(value: Any, **_) -> Any:
+    """Decode URL-encoded string."""
+    if not isinstance(value, str):
+        return value
+    return urllib.parse.unquote(value)
+
+
 TRANSFORMS = {
     "lowercase": _lowercase,
     "uppercase": _uppercase,
@@ -108,4 +128,6 @@ TRANSFORMS = {
     "regex_extract": _regex_extract,
     "regex_replace": _regex_replace,
     "truncate": _truncate,
+    "base64_decode": _base64_decode,
+    "url_decode": _url_decode,
 }
