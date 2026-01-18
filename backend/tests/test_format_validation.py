@@ -177,3 +177,55 @@ class TestNdjsonValidation:
         with pytest.raises(FormatValidationError) as exc_info:
             validate_format(file_path, "ndjson")
         assert "raw" in [s.lower() for s in exc_info.value.suggested_formats]
+
+
+class TestTsvValidation:
+    def test_valid_tsv_passes(self, temp_dir):
+        file_path = temp_dir / "valid.tsv"
+        file_path.write_text("name\tage\tcity\nAlice\t30\tNYC")
+        validate_format(file_path, "tsv")
+
+    def test_no_tabs_fails(self, temp_dir):
+        file_path = temp_dir / "notabs.tsv"
+        file_path.write_text("name age city\nAlice 30 NYC")
+        with pytest.raises(FormatValidationError):
+            validate_format(file_path, "tsv")
+
+
+class TestLtsvValidation:
+    def test_valid_ltsv_passes(self, temp_dir):
+        file_path = temp_dir / "valid.ltsv"
+        file_path.write_text("host:192.168.1.1\tmethod:GET\nhost:192.168.1.2\tmethod:POST")
+        validate_format(file_path, "ltsv")
+
+    def test_no_colons_fails(self, temp_dir):
+        file_path = temp_dir / "nocolons.ltsv"
+        file_path.write_text("just\tsome\ttabs")
+        with pytest.raises(FormatValidationError):
+            validate_format(file_path, "ltsv")
+
+
+class TestSyslogValidation:
+    def test_valid_syslog_passes(self, temp_dir):
+        file_path = temp_dir / "valid.log"
+        file_path.write_text("<34>Oct 11 22:14:15 mymachine su: test message")
+        validate_format(file_path, "syslog")
+
+    def test_no_priority_fails(self, temp_dir):
+        file_path = temp_dir / "nosyslog.log"
+        file_path.write_text("Oct 11 22:14:15 mymachine su: test message")
+        with pytest.raises(FormatValidationError):
+            validate_format(file_path, "syslog")
+
+
+class TestLogfmtValidation:
+    def test_valid_logfmt_passes(self, temp_dir):
+        file_path = temp_dir / "valid.log"
+        file_path.write_text('level=info msg="hello world" time=2024-01-01')
+        validate_format(file_path, "logfmt")
+
+    def test_no_keyvalue_fails(self, temp_dir):
+        file_path = temp_dir / "nologfmt.log"
+        file_path.write_text("just plain text without equals signs")
+        with pytest.raises(FormatValidationError):
+            validate_format(file_path, "logfmt")

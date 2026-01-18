@@ -731,6 +731,77 @@ def _validate_csv(file_path: Path) -> None:
                 )
 
 
+def _validate_tsv(file_path: Path) -> None:
+    """Validate file looks like TSV."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        first_lines = [f.readline() for _ in range(3)]
+
+    has_tabs = any("\t" in line for line in first_lines if line)
+    if not has_tabs:
+        raise FormatValidationError(
+            "File doesn't appear to be TSV - no tab characters found. Try: LTSV or Raw",
+            suggested_formats=["ltsv", "raw"]
+        )
+
+
+def _validate_ltsv(file_path: Path) -> None:
+    """Validate file looks like LTSV (labeled tab-separated values)."""
+    ltsv_pattern = re.compile(r'\w+:.+')
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        matches = 0
+        for i, line in enumerate(f):
+            if i >= 5:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            if ltsv_pattern.search(line):
+                matches += 1
+
+    if matches == 0:
+        raise FormatValidationError(
+            "File doesn't match LTSV format (key:value pairs). Try: Logfmt or Raw",
+            suggested_formats=["logfmt", "raw"]
+        )
+
+
+def _validate_syslog(file_path: Path) -> None:
+    """Validate file looks like syslog (RFC 3164 or RFC 5424)."""
+    syslog_pattern = re.compile(r'^<\d+>')
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        first_line = f.readline().strip()
+
+    if not syslog_pattern.match(first_line):
+        raise FormatValidationError(
+            "File doesn't match syslog format (must start with <priority>). Try: Raw",
+            suggested_formats=["raw"]
+        )
+
+
+def _validate_logfmt(file_path: Path) -> None:
+    """Validate file looks like logfmt (key=value pairs)."""
+    logfmt_pattern = re.compile(r'\w+=\S+')
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        matches = 0
+        for i, line in enumerate(f):
+            if i >= 5:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            if logfmt_pattern.search(line):
+                matches += 1
+
+    if matches == 0:
+        raise FormatValidationError(
+            "File doesn't match logfmt format (key=value pairs). Try: Raw",
+            suggested_formats=["raw"]
+        )
+
+
 def validate_format(file_path: Path, file_format: str) -> None:
     """Validate file content matches the selected format.
 
@@ -740,6 +811,10 @@ def validate_format(file_path: Path, file_format: str) -> None:
         "csv": _validate_csv,
         "json_array": _validate_json_array,
         "ndjson": _validate_ndjson,
+        "tsv": _validate_tsv,
+        "ltsv": _validate_ltsv,
+        "syslog": _validate_syslog,
+        "logfmt": _validate_logfmt,
     }
 
     validator = validators.get(file_format)
