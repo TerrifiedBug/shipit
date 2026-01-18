@@ -1,0 +1,56 @@
+name: Changelog Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for code changes
+        id: code_changes
+        run: |
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+          # Check if any code files changed (not just docs/config)
+          CODE_CHANGED=false
+          for file in $CHANGED_FILES; do
+            case "$file" in
+              frontend/src/*|backend/app/*|backend/tests/*)
+                CODE_CHANGED=true
+                break
+                ;;
+            esac
+          done
+          echo "changed=$CODE_CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Check for CHANGELOG update
+        id: changelog_check
+        run: |
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          if echo "$CHANGED_FILES" | grep -q "CHANGELOG.md"; then
+            echo "updated=true" >> $GITHUB_OUTPUT
+          else
+            echo "updated=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Warn if CHANGELOG not updated
+        if: steps.code_changes.outputs.changed == 'true' && steps.changelog_check.outputs.updated == 'false'
+        run: |
+          echo "::warning::This PR contains code changes but CHANGELOG.md was not updated."
+          echo ""
+          echo "Consider adding an entry to the [Unreleased] section of CHANGELOG.md"
+          echo "describing what changed. Categories: Added, Changed, Deprecated, Removed, Fixed, Security"
+          echo ""
+          echo "Example:"
+          echo "  ### Added"
+          echo "  - New feature description"
+          echo ""
+          echo "This is a reminder, not a blocking check."

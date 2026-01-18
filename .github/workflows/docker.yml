@@ -46,12 +46,29 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Extract changelog for version
+        id: changelog
+        if: github.ref == 'refs/heads/main' && steps.check_tag.outputs.exists == 'false'
+        run: |
+          chmod +x .github/scripts/extract-changelog.sh
+          CHANGELOG=$(.github/scripts/extract-changelog.sh "${{ steps.version.outputs.version }}" 2>/dev/null || echo "")
+          if [ -n "$CHANGELOG" ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            # Use delimiter for multiline output
+            echo "content<<EOF" >> $GITHUB_OUTPUT
+            echo "$CHANGELOG" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create tag and release
         if: github.ref == 'refs/heads/main' && steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.found == 'true' && steps.changelog.outputs.content || '' }}
+          generate_release_notes: ${{ steps.changelog.outputs.found != 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
