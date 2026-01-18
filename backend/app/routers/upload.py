@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 from typing import AsyncGenerator
 
+import aiofiles
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
@@ -830,3 +831,140 @@ async def delete_upload(upload_id: str):
         raise HTTPException(status_code=404, detail="Upload not found or already processed")
 
     return {"status": "deleted", "upload_id": safe_id}
+
+
+# Chunked upload endpoints for large file uploads
+
+
+def _get_chunks_dir() -> Path:
+    """Get the chunks directory, creating it if needed."""
+    chunks_dir = Path(settings.data_dir) / "chunks"
+    chunks_dir.mkdir(parents=True, exist_ok=True)
+    return chunks_dir
+
+
+@router.post("/upload/chunked/init")
+async def init_chunked_upload(
+    filename: str = Form(...),
+    file_size: int = Form(...),
+):
+    """Initialize a chunked upload."""
+    # Validate file size
+    max_size = settings.max_file_size_mb * 1024 * 1024
+    if file_size > max_size:
+        raise HTTPException(status_code=400, detail=f"File too large. Maximum size is {settings.max_file_size_mb}MB")
+
+    # Sanitize filename to prevent path traversal
+    safe_filename = _sanitize_filename(filename)
+    if not safe_filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    chunk_size = settings.chunk_size_mb * 1024 * 1024  # Convert MB to bytes
+    total_chunks = (file_size + chunk_size - 1) // chunk_size
+
+    upload = db.create_chunked_upload(
+        filename=safe_filename,
+        file_size=file_size,
+        chunk_size=chunk_size,
+        total_chunks=total_chunks,
+        user_id="anonymous",  # Auth will be added later
+        retention_hours=settings.chunk_retention_hours,
+    )
+
+    return {
+        "upload_id": upload["id"],
+        "chunk_size": chunk_size,
+        "total_chunks": total_chunks,
+    }
+
+
+@router.post("/upload/chunked/{upload_id}/chunk/{chunk_index}")
+async def upload_chunk(
+    upload_id: str,
+    chunk_index: int,
+    request: Request,
+):
+    """Upload a single chunk."""
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_chunked_upload(safe_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    if chunk_index < 0 or chunk_index >= upload["total_chunks"]:
+        raise HTTPException(status_code=400, detail="Invalid chunk index")
+
+    # Create chunks directory for this upload
+    chunks_dir = _get_chunks_dir() / safe_id
+    chunks_dir.mkdir(parents=True, exist_ok=True)
+
+    chunk_path = chunks_dir / f"{chunk_index:06d}"
+
+    # Stream directly to disk
+    async with aiofiles.open(chunk_path, 'wb') as f:
+        async for data in request.stream():
+            await f.write(data)
+
+    db.mark_chunk_complete(safe_id, chunk_index)
+
+    return {"received": True, "chunk_index": chunk_index}
+
+
+@router.get("/upload/chunked/{upload_id}/status")
+async def get_chunked_upload_status(upload_id: str):
+    """Get the status of a chunked upload."""
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_chunked_upload(safe_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    return {
+        "upload_id": safe_id,
+        "filename": upload["filename"],
+        "total_chunks": upload["total_chunks"],
+        "completed_chunks": len(upload["completed_chunks"]),
+        "status": upload["status"],
+    }
+
+
+@router.post("/upload/chunked/{upload_id}/complete")
+async def complete_chunked_upload(upload_id: str):
+    """Complete a chunked upload by reassembling chunks."""
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_chunked_upload(safe_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    # Check if already completed
+    if upload["status"] == "completed":
+        raise HTTPException(status_code=400, detail="Upload already completed")
+
+    # Verify all chunks are uploaded
+    if len(upload["completed_chunks"]) != upload["total_chunks"]:
+        missing = set(range(upload["total_chunks"])) - set(upload["completed_chunks"])
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing {len(missing)} chunks"
+        )
+
+    # Reassemble chunks
+    chunks_dir = _get_chunks_dir() / safe_id
+    uploads_dir = Path(settings.data_dir) / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    final_path = uploads_dir / safe_id / upload["filename"]
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+
+    async with aiofiles.open(final_path, 'wb') as outfile:
+        for i in range(upload["total_chunks"]):
+            chunk_path = chunks_dir / f"{i:06d}"
+            async with aiofiles.open(chunk_path, 'rb') as chunk:
+                while data := await chunk.read(65536):
+                    await outfile.write(data)
+
+    # Cleanup chunks
+    shutil.rmtree(chunks_dir, ignore_errors=True)
+
+    # Update status
+    db.update_chunked_upload_status(safe_id, "completed")
+
+    return {"upload_id": safe_id, "status": "completed"}

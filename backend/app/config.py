@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     index_prefix: str = "shipit-"
     strict_index_mode: bool = True
     failure_file_retention_hours: int = 24
-    max_file_size_mb: int = 500
     max_fields_per_document: int = 1000  # 0 to disable
 
     # Rate limiting
@@ -26,6 +25,11 @@ class Settings(BaseSettings):
 
     # Ingestion settings
     bulk_batch_size: int = 1000
+
+    # Chunked upload settings
+    max_file_size_mb: int = 5000  # 5GB
+    chunk_size_mb: int = 10  # 10MB chunks
+    chunk_retention_hours: int = 24
 
     # App URL (used for CORS and OIDC callback)
     app_url: Optional[str] = None
