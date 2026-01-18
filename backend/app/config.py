@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     password_require_digit: bool = True
     password_require_special: bool = False  # Optional by default
 
+    # Trusted proxy configuration
+    trusted_proxies: list[str] = []  # CIDR ranges, e.g., ["10.0.0.0/8", "172.16.0.0/12"]
+
     # OIDC settings
     oidc_enabled: bool = False
     oidc_issuer_url: Optional[str] = None
