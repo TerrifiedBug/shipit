@@ -80,15 +80,18 @@ function UserMenu() {
                 <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                   {user.email}
                 </div>
-                <button
-                  onClick={() => {
-                    setShowPasswordChange(true);
-                    setIsOpen(false);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  Change Password
-                </button>
+                {/* Only show password change for local users, not OIDC */}
+                {user.auth_type === 'local' && (
+                  <button
+                    onClick={() => {
+                      setShowPasswordChange(true);
+                      setIsOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Change Password
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     logout();

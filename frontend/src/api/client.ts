@@ -6,6 +6,7 @@ export interface User {
   email: string;
   name: string;
   is_admin: number;
+  auth_type: 'local' | 'oidc';
   password_change_required?: boolean;
 }
 
