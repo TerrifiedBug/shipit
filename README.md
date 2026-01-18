@@ -44,11 +44,12 @@ ShipIt is designed for controlled self-service, with guardrails to prevent accid
 - **Authentication**: Local users, OIDC SSO, and API keys for automation
 - **User Management**: Admin UI for creating/editing/deleting users
 - **OIDC SSO**: Enterprise single sign-on with auto-provisioning and group-based roles
-- **Drag-and-drop upload**: JSON, NDJSON, CSV, TSV, LTSV, and syslog formats
+- **Drag-and-drop upload**: JSON, NDJSON, CSV, TSV, LTSV, syslog, logfmt, and raw formats
 - **Multi-file upload**: Combine multiple files of the same format into a single index
 - **Auto-detection**: File format and field type inference
 - **Field mapping**: Rename, exclude, and configure fields before ingestion
 - **Field type coercion**: Override inferred types (string, integer, float, boolean)
+- **Pattern-based parsing**: Grok patterns and custom regex for unstructured logs
 - **Timestamp parsing**: Automatic UTC conversion for various formats
 - **Real-time progress**: Live ingestion status via Server-Sent Events
 - **Upload history**: Track all uploads with user attribution and audit trail
@@ -195,6 +196,8 @@ Example OpenSearch security role:
 - **TSV**: Tab-separated values with header row
 - **LTSV**: Labeled Tab-separated Values (`label:value\tlabel:value`)
 - **Syslog**: RFC 3164 and RFC 5424 syslog message formats
+- **Logfmt**: Key-value pairs (`key=value key2="quoted value"`)
+- **Raw**: Each line becomes a record with a `raw_message` field (for use with patterns)
 
 ## Timestamp Handling
 
@@ -223,6 +226,36 @@ ShipIt automatically infers field types from your data, but you can override the
 
 Values that fail coercion become `null` and the record is still ingested. This ensures OpenSearch dynamic mapping picks up the correct type for your fields.
 
+## Pattern-Based Parsing
+
+For unstructured log files that don't match standard formats, ShipIt supports pattern-based extraction using Grok patterns or custom regex.
+
+### Using Patterns
+
+1. Upload your log file
+2. In the Preview step, select "Use custom pattern" or choose a saved pattern
+3. Define your pattern using Grok syntax (e.g., `%{IP:client_ip} %{GREEDYDATA:message}`) or raw regex
+4. Preview the extracted fields before ingestion
+
+### Grok Patterns
+
+Grok patterns are named regex building blocks commonly used in Logstash and Elastic. ShipIt includes 50+ built-in patterns:
+
+| Pattern | Description | Example |
+|---------|-------------|---------|
+| `%{IP:field}` | IPv4 address | `192.168.1.1` |
+| `%{TIMESTAMP_ISO8601:ts}` | ISO 8601 timestamp | `2024-01-15T10:30:00Z` |
+| `%{LOGLEVEL:level}` | Log levels | `DEBUG`, `INFO`, `ERROR` |
+| `%{HOSTNAME:host}` | DNS hostname | `server.example.com` |
+| `%{INT:count}` | Integer | `42`, `-17` |
+| `%{GREEDYDATA:msg}` | Match everything | Any remaining text |
+
+Combine patterns to build log parsers: `%{IP:client} - - \[%{HTTPDATE:timestamp}\] "%{WORD:method} %{URIPATH:path}"`
+
+### Custom Patterns
+
+Users can save reusable patterns via the Patterns management page. Custom patterns support both Grok syntax and raw regex with named capture groups, and are available to all users for parsing logs.
+
 ## Authentication
 
 ### First-Time Setup
@@ -231,7 +264,7 @@ When no users exist, ShipIt prompts for initial admin registration. The first us
 
 ### Session Authentication
 
-Users log in with email/password and receive a session cookie valid for `SESSION_DURATION_HOURS` (default 8 hours). Sessions are HTTP-only cookies for security.
+Users log in with email/password and receive a session cookie valid for `SESSION_DURATION_HOURS` (default 8 hours). Sessions are HTTP-only cookies for security. Users can change their password from the user menu dropdown; changing a password invalidates all other active sessions for that user.
 
 ### OIDC Single Sign-On
 
