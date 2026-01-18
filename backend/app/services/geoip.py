@@ -78,7 +78,7 @@ def _download_database() -> bool:
             "suffix": "tar.gz",
         }
 
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=120.0, follow_redirects=True) as client:
             response = client.get(MAXMIND_DOWNLOAD_URL, params=params)
 
             if response.status_code == 401:
