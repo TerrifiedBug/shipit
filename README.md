@@ -33,7 +33,7 @@ ShipIt is designed for controlled self-service, with guardrails to prevent accid
 - **Field Count Limits**: Maximum fields per document (default: 1000) prevents OpenSearch mapping explosion from malformed data.
 - **API Key Scoping**: Programmatic access via API keys inherits the creating user's permissions, supports expiration dates, optional IP allowlisting, and is tracked in audit logs.
 - **Index Retention**: Optional automatic deletion of indices older than a configurable number of days. Only deletes ShipIt-managed indices.
-- **File Size Limits**: Configurable maximum upload size (default: 500MB) to prevent resource exhaustion.
+- **File Size Limits**: Configurable maximum upload size (default: 5GB with chunked upload) to prevent resource exhaustion.
 - **SSL Verification**: SSL certificate verification is enabled by default for OpenSearch connections.
 - **Session Security**: HTTP-only cookies with secure flag (HTTPS), configurable session duration.
 - **Login Protection**: Rate limiting per IP and automatic account lockout after failed attempts.
@@ -49,6 +49,10 @@ ShipIt is designed for controlled self-service, with guardrails to prevent accid
 - **Auto-detection**: File format and field type inference
 - **Field mapping**: Rename, exclude, and configure fields before ingestion
 - **Field type coercion**: Override inferred types (string, integer, float, boolean)
+- **Field transformations**: Apply transforms to fields (lowercase, uppercase, trim, regex, base64 decode, mask PII, etc.)
+- **Large file support**: Chunked upload for files up to 5GB with resume capability
+- **GeoIP enrichment**: Enrich IP fields with geographic data using MaxMind GeoLite2
+- **ECS mapping**: One-click Elastic Common Schema field mapping suggestions
 - **Pattern-based parsing**: Grok patterns and custom regex for unstructured logs
 - **Timestamp parsing**: Automatic UTC conversion for various formats
 - **Real-time progress**: Live ingestion status via Server-Sent Events
@@ -138,7 +142,9 @@ docker run -p 80:80 --env-file .env shipit
 | `INDEX_PREFIX` | `shipit-` | Prefix for all created indices |
 | `STRICT_INDEX_MODE` | `true` | Block writes to indices not created by ShipIt (prevents accidental overwrites) |
 | `OPENSEARCH_VERIFY_CERTS` | `true` | Verify SSL certificates when connecting to OpenSearch |
-| `MAX_FILE_SIZE_MB` | `500` | Maximum upload file size in MB |
+| `MAX_FILE_SIZE_MB` | `5000` | Maximum upload file size in MB (5GB with chunked upload) |
+| `CHUNK_SIZE_MB` | `10` | Chunk size for large file uploads |
+| `CHUNK_RETENTION_HOURS` | `24` | How long to keep incomplete chunked uploads |
 | `MAX_FIELDS_PER_DOCUMENT` | `1000` | Maximum fields per document to prevent mapping explosion (0 to disable) |
 | `UPLOAD_RATE_LIMIT_PER_MINUTE` | `10` | Maximum uploads per minute per user (0 to disable) |
 | `INDEX_RETENTION_DAYS` | `0` | Auto-delete indices older than X days (0 to disable) |
@@ -151,9 +157,12 @@ docker run -p 80:80 --env-file .env shipit
 | `PASSWORD_REQUIRE_DIGIT` | `true` | Require digit in password |
 | `PASSWORD_REQUIRE_SPECIAL` | `false` | Require special character in password |
 | `SESSION_DURATION_HOURS` | `8` | How long user sessions remain valid |
+| `SHIPIT_ENV` | `development` | Set to `production` to enforce secure session secret |
+| `TRUSTED_PROXIES` | `[]` | CIDR ranges for trusted reverse proxies (e.g., `["10.0.0.0/8"]`) |
 | `APP_URL` | - | Public URL for CORS and OIDC callbacks (e.g., `https://shipit.example.com`) |
 | `FAILURE_FILE_RETENTION_HOURS` | `24` | How long to keep failed record files |
 | `BULK_BATCH_SIZE` | `1000` | Number of records per bulk insert to OpenSearch |
+| `MAXMIND_LICENSE_KEY` | - | MaxMind GeoLite2 license key for GeoIP enrichment (optional) |
 
 ### OIDC SSO (Optional)
 
