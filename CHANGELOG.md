@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-01-18
+
+### Added
+- Chunked upload for files up to 5GB with resume support
+- GeoIP enrichment for IP fields using MaxMind GeoLite2
+- ECS (Elastic Common Schema) field mapping suggestions
+- Field transformations: lowercase, uppercase, trim, regex_extract, regex_replace, truncate, base64_decode, url_decode, hash_sha256, mask_email, mask_ip, default, parse_json, parse_kv
+- Format validation with suggested alternatives when mismatch detected
+- Trusted proxy configuration for X-Forwarded-For
+
+### Changed
+- Large file uploads now use chunked upload automatically (>100MB)
+
+### Fixed
+- SQL injection vulnerability in dynamic column updates
+- Default session secret now fails in production environment
+- Timing attack in authentication (constant-time comparison)
+
+### Security
+- Added column allowlists for database updates
+- Added SHIPIT_ENV production check for session secret
+- Added TRUSTED_PROXIES config for reverse proxy setups
+
 ## [0.2.1] - 2025-01-18
 
 ### Added
@@ -168,7 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dark mode support
 - Docker deployment with nginx reverse proxy
 
-[Unreleased]: https://github.com/TerrifiedBug/shipit/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/TerrifiedBug/shipit/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/TerrifiedBug/shipit/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/TerrifiedBug/shipit/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/TerrifiedBug/shipit/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/TerrifiedBug/shipit/compare/v0.1.7...v0.1.8
