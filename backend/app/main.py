@@ -10,6 +10,7 @@ from app.config import settings
 from app.routers import admin, api_upload, audit, auth, health, history, indexes, keys, patterns, upload
 from app.routers.auth import get_current_user
 from app.services.database import init_db
+from app.services.geoip import init_geoip
 from app.services.retention import start_retention_task, stop_retention_task
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,7 @@ async def lifespan(app: FastAPI):
         )
 
     init_db()
+    init_geoip()  # Download/load GeoIP database if configured
     start_retention_task()
     yield
     stop_retention_task()
