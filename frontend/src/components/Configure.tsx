@@ -39,15 +39,17 @@ interface ConfigureProps {
 
 const INDEX_PREFIX = 'shipit-';
 
-// Keywords that suggest a field is a timestamp
-const TIMESTAMP_KEYWORDS = ['time', 'date', 'created', 'updated', 'timestamp', 'at', 'when', 'ts'];
+// Keywords that suggest a field is a timestamp (must be whole words or clear suffixes)
+const TIMESTAMP_KEYWORDS = ['time', 'date', 'created', 'updated', 'timestamp', 'datetime', 'createdat', 'updatedat', 'startedat', 'endedat'];
 
 // Patterns that look like timestamps
 const TIMESTAMP_PATTERNS = [
-  /^\d{4}-\d{2}-\d{2}/, // ISO date start
-  /^\d{2}\/\w{3}\/\d{4}/, // Nginx/Apache CLF
+  /^\d{4}-\d{2}-\d{2}/, // ISO date start (2024-01-15)
+  /^\d{2}\/\w{3}\/\d{4}/, // Nginx/Apache CLF (15/Jan/2024)
   /^\d{10,13}$/, // Epoch seconds or milliseconds
-  /T\d{2}:\d{2}/, // ISO datetime
+  /T\d{2}:\d{2}/, // ISO datetime contains T00:00
+  /^\d{4}\/\d{2}\/\d{2}/, // Slash date (2024/01/15)
+  /^\w{3}\s+\d{1,2},?\s+\d{4}/, // Month day year (Jan 15, 2024)
 ];
 
 function looksLikeTimestamp(value: unknown): boolean {
@@ -61,14 +63,28 @@ function looksLikeTimestamp(value: unknown): boolean {
 }
 
 function isLikelyTimestampField(fieldName: string, sampleValues: unknown[]): boolean {
-  // Check field name
   const nameLower = fieldName.toLowerCase();
-  if (TIMESTAMP_KEYWORDS.some(keyword => nameLower.includes(keyword))) {
-    return true;
+
+  // Check if field name contains timestamp keywords
+  const hasTimestampName = TIMESTAMP_KEYWORDS.some(keyword => nameLower.includes(keyword));
+
+  // Get valid sample values
+  const validSamples = sampleValues.filter(v => v !== null && v !== undefined && String(v).trim() !== '');
+
+  // If name suggests timestamp, verify at least some values look like timestamps
+  if (hasTimestampName && validSamples.length > 0) {
+    const timestampCount = validSamples.filter(looksLikeTimestamp).length;
+    return timestampCount >= validSamples.length * 0.5;
   }
 
-  // Check sample values - if any look like timestamps
-  return sampleValues.some(looksLikeTimestamp);
+  // If name doesn't suggest timestamp, require stronger value evidence
+  if (validSamples.length > 0) {
+    const timestampCount = validSamples.filter(looksLikeTimestamp).length;
+    // At least 80% of values should look like timestamps
+    return timestampCount >= validSamples.length * 0.8;
+  }
+
+  return false;
 }
 
 // IP address regex - matches IPv4 and IPv6
