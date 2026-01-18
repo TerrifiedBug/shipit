@@ -229,3 +229,90 @@ class TestLogfmtValidation:
         file_path.write_text("just plain text without equals signs")
         with pytest.raises(FormatValidationError):
             validate_format(file_path, "logfmt")
+
+
+class TestJsonRejectionInOtherFormats:
+    """Ensure JSON content is rejected when user selects non-JSON formats."""
+
+    def test_json_object_rejected_as_csv(self, temp_dir):
+        """JSON objects should be rejected when parsed as CSV."""
+        file_path = temp_dir / "data.json"
+        file_path.write_text('{"name": "Alice", "age": 30}\n{"name": "Bob", "age": 25}')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "csv")
+        assert "json" in exc_info.value.message.lower()
+        assert "ndjson" in [s.lower() for s in exc_info.value.suggested_formats]
+
+    def test_json_array_rejected_as_csv(self, temp_dir):
+        """JSON arrays should be rejected when parsed as CSV."""
+        file_path = temp_dir / "data.json"
+        file_path.write_text('[{"name": "Alice"}, {"name": "Bob"}]')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "csv")
+        assert "json" in exc_info.value.message.lower()
+        assert "json_array" in [s.lower() for s in exc_info.value.suggested_formats]
+
+    def test_json_object_rejected_as_tsv(self, temp_dir):
+        """JSON objects should be rejected when parsed as TSV."""
+        file_path = temp_dir / "data.json"
+        file_path.write_text('{"name": "Alice", "age": 30}')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "tsv")
+        assert "json" in exc_info.value.message.lower()
+
+    def test_json_array_rejected_as_tsv(self, temp_dir):
+        """JSON arrays should be rejected when parsed as TSV."""
+        file_path = temp_dir / "data.json"
+        file_path.write_text('[{"name": "Alice"}]')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "tsv")
+        assert "json_array" in [s.lower() for s in exc_info.value.suggested_formats]
+
+    def test_json_object_rejected_as_ltsv(self, temp_dir):
+        """JSON objects should be rejected when parsed as LTSV."""
+        file_path = temp_dir / "data.json"
+        file_path.write_text('{"host": "192.168.1.1", "method": "GET"}')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "ltsv")
+        assert "json" in exc_info.value.message.lower()
+
+    def test_json_array_rejected_as_ltsv(self, temp_dir):
+        """JSON arrays should be rejected when parsed as LTSV."""
+        file_path = temp_dir / "data.json"
+        file_path.write_text('[{"host": "192.168.1.1"}]')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "ltsv")
+        assert "json_array" in [s.lower() for s in exc_info.value.suggested_formats]
+
+    def test_json_object_rejected_as_logfmt(self, temp_dir):
+        """JSON objects should be rejected when parsed as logfmt."""
+        file_path = temp_dir / "data.json"
+        file_path.write_text('{"level": "info", "msg": "hello"}')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "logfmt")
+        assert "json" in exc_info.value.message.lower()
+
+    def test_json_array_rejected_as_logfmt(self, temp_dir):
+        """JSON arrays should be rejected when parsed as logfmt."""
+        file_path = temp_dir / "data.json"
+        file_path.write_text('[{"level": "info"}]')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "logfmt")
+        assert "json_array" in [s.lower() for s in exc_info.value.suggested_formats]
+
+    def test_json_with_leading_whitespace_rejected(self, temp_dir):
+        """JSON with leading whitespace should still be rejected."""
+        file_path = temp_dir / "data.json"
+        file_path.write_text('  \n  {"name": "Alice"}')
+
+        with pytest.raises(FormatValidationError) as exc_info:
+            validate_format(file_path, "csv")
+        assert "json" in exc_info.value.message.lower()

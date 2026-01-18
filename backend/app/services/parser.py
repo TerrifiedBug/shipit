@@ -696,6 +696,19 @@ def _validate_csv(file_path: Path) -> None:
                 suggested_formats=[]
             )
 
+        # Check if content looks like JSON (starts with { or [)
+        first_char = sample.lstrip()[:1]
+        if first_char == "{":
+            raise FormatValidationError(
+                "File appears to be JSON, not CSV. Try: NDJSON or JSON Array",
+                suggested_formats=["ndjson", "json_array"]
+            )
+        if first_char == "[":
+            raise FormatValidationError(
+                "File appears to be a JSON array, not CSV. Try: JSON Array",
+                suggested_formats=["json_array"]
+            )
+
         f.seek(0)
 
         # Try to detect delimiter
@@ -736,6 +749,19 @@ def _validate_tsv(file_path: Path) -> None:
     with open(file_path, "r", encoding="utf-8") as f:
         first_lines = [f.readline() for _ in range(3)]
 
+    # Check if content looks like JSON
+    first_content = "".join(first_lines).lstrip()[:1]
+    if first_content == "{":
+        raise FormatValidationError(
+            "File appears to be JSON, not TSV. Try: NDJSON or JSON Array",
+            suggested_formats=["ndjson", "json_array"]
+        )
+    if first_content == "[":
+        raise FormatValidationError(
+            "File appears to be a JSON array, not TSV. Try: JSON Array",
+            suggested_formats=["json_array"]
+        )
+
     has_tabs = any("\t" in line for line in first_lines if line)
     if not has_tabs:
         raise FormatValidationError(
@@ -746,9 +772,12 @@ def _validate_tsv(file_path: Path) -> None:
 
 def _validate_ltsv(file_path: Path) -> None:
     """Validate file looks like LTSV (labeled tab-separated values)."""
-    ltsv_pattern = re.compile(r'\w+:.+')
+    # LTSV pattern: key:value where key is alphanumeric (no quotes/braces)
+    # Must start at beginning of field (after tab or start of line)
+    ltsv_pattern = re.compile(r'(?:^|\t)(\w+):[^\t]+')
 
     with open(file_path, "r", encoding="utf-8") as f:
+        first_line = ""
         matches = 0
         for i, line in enumerate(f):
             if i >= 5:
@@ -756,8 +785,23 @@ def _validate_ltsv(file_path: Path) -> None:
             line = line.strip()
             if not line:
                 continue
+            if i == 0:
+                first_line = line
             if ltsv_pattern.search(line):
                 matches += 1
+
+    # Check if content looks like JSON
+    first_char = first_line.lstrip()[:1] if first_line else ""
+    if first_char == "{":
+        raise FormatValidationError(
+            "File appears to be JSON, not LTSV. Try: NDJSON or JSON Array",
+            suggested_formats=["ndjson", "json_array"]
+        )
+    if first_char == "[":
+        raise FormatValidationError(
+            "File appears to be a JSON array, not LTSV. Try: JSON Array",
+            suggested_formats=["json_array"]
+        )
 
     if matches == 0:
         raise FormatValidationError(
@@ -785,6 +829,7 @@ def _validate_logfmt(file_path: Path) -> None:
     logfmt_pattern = re.compile(r'\w+=\S+')
 
     with open(file_path, "r", encoding="utf-8") as f:
+        first_line = ""
         matches = 0
         for i, line in enumerate(f):
             if i >= 5:
@@ -792,8 +837,23 @@ def _validate_logfmt(file_path: Path) -> None:
             line = line.strip()
             if not line:
                 continue
+            if i == 0:
+                first_line = line
             if logfmt_pattern.search(line):
                 matches += 1
+
+    # Check if content looks like JSON
+    first_char = first_line.lstrip()[:1] if first_line else ""
+    if first_char == "{":
+        raise FormatValidationError(
+            "File appears to be JSON, not logfmt. Try: NDJSON or JSON Array",
+            suggested_formats=["ndjson", "json_array"]
+        )
+    if first_char == "[":
+        raise FormatValidationError(
+            "File appears to be a JSON array, not logfmt. Try: JSON Array",
+            suggested_formats=["json_array"]
+        )
 
     if matches == 0:
         raise FormatValidationError(
