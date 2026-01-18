@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # App URL (used for CORS and OIDC callback)
     app_url: Optional[str] = None
 
+    # Environment
+    shipit_env: str = "development"
+
     # Auth settings
     session_secret: str = "change-me-in-production"
     session_duration_hours: int = 8

@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -10,6 +11,8 @@ from app.routers import admin, api_upload, audit, auth, health, history, indexes
 from app.routers.auth import get_current_user
 from app.services.database import init_db
 from app.services.retention import start_retention_task, stop_retention_task
+
+logger = logging.getLogger(__name__)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -59,6 +62,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize resources on startup."""
+    # Security: Fail if using default session secret in production
+    if settings.session_secret == "change-me-in-production":
+        if settings.shipit_env == "production":
+            raise RuntimeError(
+                "SESSION_SECRET must be changed in production! "
+                "Set a secure random value via environment variable."
+            )
+        logger.warning(
+            "Using default SESSION_SECRET - this is insecure for production. "
+            "Set SESSION_SECRET environment variable."
+        )
+
     init_db()
     start_retention_task()
     yield
