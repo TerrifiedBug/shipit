@@ -7,8 +7,17 @@ from pathlib import Path
 
 # Load ECS schema from bundled JSON file
 _schema_path = Path(__file__).parent.parent / "data" / "ecs_schema.json"
-with open(_schema_path) as f:
-    ECS_SCHEMA: dict[str, dict] = json.load(f)
+
+
+def _load_ecs_schema() -> dict[str, dict]:
+    """Load ECS schema from bundled JSON file."""
+    if _schema_path.exists():
+        with open(_schema_path) as f:
+            return json.load(f)
+    return {}
+
+
+ECS_SCHEMA: dict[str, dict] = _load_ecs_schema()
 
 # Safe ECS mappings - only unambiguous field name mappings
 # NOTE: Ambiguous mappings have been intentionally removed:

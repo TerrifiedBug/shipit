@@ -35,6 +35,12 @@ RUN pip install --no-cache-dir . && \
 # Copy backend code
 COPY backend/app ./app
 
+# Copy download script and fetch latest ECS schema at build time
+COPY scripts/download-ecs-schema.py ./scripts/
+RUN pip install --no-cache-dir pyyaml && \
+    python scripts/download-ecs-schema.py && \
+    rm -rf scripts/
+
 # Copy frontend build
 COPY --from=frontend-build /app/frontend/dist /usr/share/nginx/html
 

@@ -58,8 +58,27 @@ class TestECSSchema:
             assert "description" in field_info, f"Field {field_name} missing description"
 
     def test_ecs_schema_field_types(self):
-        """ECS schema should use valid field types."""
-        valid_types = {"date", "text", "keyword", "ip", "long", "object", "geo_point"}
+        """ECS schema should use valid Elasticsearch field types."""
+        # Official ECS schema uses full range of Elasticsearch types
+        valid_types = {
+            "boolean",
+            "constant_keyword",
+            "date",
+            "double",
+            "flattened",
+            "float",
+            "geo_point",
+            "integer",
+            "ip",
+            "keyword",
+            "long",
+            "match_only_text",
+            "nested",
+            "object",
+            "scaled_float",
+            "text",
+            "wildcard",
+        }
         for field_name, field_info in ECS_SCHEMA.items():
             assert field_info["type"] in valid_types, (
                 f"Field {field_name} has invalid type: {field_info['type']}"
@@ -205,7 +224,8 @@ class TestGetEcsFieldType:
         """Should return correct type for ECS fields."""
         assert get_ecs_field_type("source.ip") == "ip"
         assert get_ecs_field_type("source.port") == "long"
-        assert get_ecs_field_type("message") == "text"
+        # Official ECS schema uses match_only_text for message field
+        assert get_ecs_field_type("message") == "match_only_text"
         assert get_ecs_field_type("not.a.field") is None
 
     def test_get_ecs_field_type_various(self):
