@@ -209,3 +209,41 @@ def log_ingestion_completed(
         },
         ip_address=ip_address,
     )
+
+
+def log_template_created(
+    actor_id: str,
+    actor_name: str,
+    template_id: str,
+    template_name: str,
+    ip_address: str | None = None,
+) -> None:
+    """Log index template creation."""
+    db.create_audit_log(
+        event_type=db.AUDIT_EVENT_TEMPLATE_CREATED,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        target_type="template",
+        target_id=template_id,
+        details={"name": template_name},
+        ip_address=ip_address,
+    )
+
+
+def log_template_deleted(
+    actor_id: str,
+    actor_name: str,
+    template_id: str,
+    template_name: str,
+    ip_address: str | None = None,
+) -> None:
+    """Log index template deletion."""
+    db.create_audit_log(
+        event_type=db.AUDIT_EVENT_TEMPLATE_DELETED,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        target_type="template",
+        target_id=template_id,
+        details={"name": template_name},
+        ip_address=ip_address,
+    )

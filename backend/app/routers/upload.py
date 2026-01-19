@@ -8,11 +8,12 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 import aiofiles
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.config import settings
 from app.routers.auth import require_auth, require_user_or_admin
@@ -20,7 +21,14 @@ from app.services.request_utils import get_client_ip
 from app.models import FieldInfo, IngestRequest, PreviewResponse, UploadResponse
 from app.services import database as db
 from app.services.ingestion import count_records, ingest_file
-from app.services.opensearch import validate_index_name, validate_index_for_ingestion
+from app.services.opensearch import (
+    validate_index_name,
+    validate_index_for_ingestion,
+    get_index_mapping,
+    index_exists,
+    build_mapping_from_types,
+    check_mapping_conflicts,
+)
 from app.services.parser import detect_format, infer_fields, parse_preview, validate_field_count, parse_with_pattern, validate_format, FormatValidationError
 from app.services.ecs import suggest_ecs_mappings, get_all_ecs_fields
 from app.services.geoip import is_geoip_available
@@ -551,6 +559,128 @@ async def reparse_upload(
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse as {format}: {str(e)}")
+
+
+class ValidationResult(BaseModel):
+    """Result of a dry-run validation."""
+    valid: bool
+    index_exists: bool
+    conflicts: list[dict[str, str]] = []
+    warnings: list[str] = []
+    mapping_preview: dict[str, Any] = {}
+    field_count: int = 0
+
+
+@router.post("/upload/{upload_id}/validate")
+async def validate_ingest(
+    upload_id: str,
+    request: IngestRequest,
+    user: dict = Depends(require_auth),
+):
+    """Validate ingestion configuration without actually ingesting.
+
+    Performs a dry-run that checks:
+    - Index name validity
+    - Mapping conflicts with existing index
+    - Field type compatibility
+
+    Returns validation result with mapping preview.
+    """
+    safe_id = _validate_upload_id(upload_id)
+    upload = db.get_upload(safe_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    # Validate index name
+    is_valid, error_msg = validate_index_name(request.index_name)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+
+    # Build full index name with prefix
+    full_index_name = f"{settings.index_prefix}{request.index_name}"
+
+    # Get cached field info
+    cache = _upload_cache.get(safe_id)
+    if not cache or "fields" not in cache:
+        raise HTTPException(
+            status_code=404,
+            detail="Upload preview data not found. Please re-upload the file."
+        )
+
+    # Build the expected field types from the request
+    # Start with inferred types from the preview data
+    inferred_types = {f["name"]: f["type"] for f in cache["fields"]}
+
+    # Apply field mappings (rename fields)
+    final_field_types = {}
+    for field_name, field_type in inferred_types.items():
+        # Skip excluded fields
+        if field_name in request.excluded_fields:
+            continue
+
+        # Apply field mapping (rename)
+        mapped_name = request.field_mappings.get(field_name, field_name)
+
+        # Apply explicit field type override if provided
+        if mapped_name in request.field_types:
+            field_type = request.field_types[mapped_name]
+        elif field_name in request.field_types:
+            field_type = request.field_types[field_name]
+
+        final_field_types[mapped_name] = field_type
+
+    # Add timestamp field if specified
+    if request.timestamp_field:
+        # The timestamp field gets mapped to @timestamp
+        final_field_types["@timestamp"] = "date"
+
+    # Build the mapping from types
+    mapping_preview = build_mapping_from_types(final_field_types)
+
+    warnings = []
+    conflicts = []
+
+    # Check if index exists
+    idx_exists = index_exists(full_index_name)
+
+    if idx_exists:
+        # Get existing mapping
+        existing_mapping = get_index_mapping(full_index_name)
+        if existing_mapping:
+            # Check for conflicts
+            conflicts = check_mapping_conflicts(existing_mapping, final_field_types)
+
+            if conflicts:
+                for c in conflicts:
+                    warnings.append(
+                        f"Field '{c['field']}' type conflict: existing={c['existing_type']}, new={c['new_type']}"
+                    )
+        else:
+            warnings.append("Could not retrieve existing index mapping for conflict check")
+    else:
+        warnings.append(f"Index '{full_index_name}' does not exist and will be created")
+
+    # Validate index can be written to (strict mode check)
+    try:
+        validate_index_for_ingestion(full_index_name)
+    except ValueError as e:
+        return ValidationResult(
+            valid=False,
+            index_exists=idx_exists,
+            conflicts=conflicts,
+            warnings=[str(e)],
+            mapping_preview=mapping_preview,
+            field_count=len(final_field_types),
+        )
+
+    return ValidationResult(
+        valid=len(conflicts) == 0,
+        index_exists=idx_exists,
+        conflicts=conflicts,
+        warnings=warnings,
+        mapping_preview=mapping_preview,
+        field_count=len(final_field_types),
+    )
 
 
 def _run_ingestion_task(

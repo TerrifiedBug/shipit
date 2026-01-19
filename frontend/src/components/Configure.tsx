@@ -1,16 +1,21 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   cancelIngest,
+  createTemplate,
   EcsField,
   FieldInfo,
   FieldTransform,
   getEcsFields,
+  IndexTemplate,
   IngestResponse,
+  listTemplates,
   ProgressEvent,
   startIngest,
   subscribeToProgress,
   suggestEcs,
   UploadResponse,
+  validateIngest,
+  ValidationResult,
 } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { EcsFieldDropdown } from './EcsFieldDropdown';
@@ -163,6 +168,9 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   const [error, setError] = useState<string | null>(null);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
   const [includeFilename, setIncludeFilename] = useState(false);
   const [filenameField, setFilenameField] = useState('source_file');
   const [fieldTypes, setFieldTypes] = useState<Record<string, string>>(() => {
@@ -179,6 +187,14 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   const [geoipAvailable, setGeoipAvailable] = useState(false);
   const [ecsSuggestions, setEcsSuggestions] = useState<Record<string, string>>({});
   const [allEcsFields, setAllEcsFields] = useState<Record<string, EcsField>>({});
+
+  // Template state
+  const [templates, setTemplates] = useState<IndexTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
   const setFieldType = (fieldName: string, type: string) => {
     setFieldTypes(prev => ({ ...prev, [fieldName]: type }));
@@ -225,6 +241,107 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   useEffect(() => {
     getEcsFields().then(setAllEcsFields).catch(console.error);
   }, []);
+
+  // Fetch templates on mount
+  useEffect(() => {
+    listTemplates().then(setTemplates).catch(console.error);
+  }, []);
+
+  // Apply a template to the current configuration
+  const applyTemplate = (templateId: string) => {
+    const template = templates.find(t => t.id === templateId);
+    if (!template) return;
+
+    const config = template.config;
+
+    // Apply field mappings
+    setFieldMappings(prev =>
+      prev.map(f => ({
+        ...f,
+        mappedName: config.field_mappings[f.originalName] || f.originalName,
+        excluded: config.excluded_fields.includes(f.originalName),
+      }))
+    );
+
+    // Apply timestamp field
+    if (config.timestamp_field !== undefined) {
+      setTimestampField(config.timestamp_field);
+    }
+
+    // Apply field types
+    if (config.field_types) {
+      setFieldTypes(prev => ({ ...prev, ...config.field_types }));
+    }
+
+    // Apply transforms
+    if (config.field_transforms) {
+      setFieldTransforms(config.field_transforms);
+    }
+
+    addToast(`Applied template: ${template.name}`, 'success');
+    setSelectedTemplateId(templateId);
+  };
+
+  // Save current configuration as a template
+  const handleSaveTemplate = async () => {
+    if (!templateName.trim()) {
+      addToast('Template name is required', 'error');
+      return;
+    }
+
+    setIsSavingTemplate(true);
+    try {
+      // Build the configuration to save
+      const mappings: Record<string, string> = {};
+      const excluded: string[] = [];
+
+      for (const field of fieldMappings) {
+        if (field.excluded) {
+          excluded.push(field.originalName);
+        } else if (field.mappedName !== field.originalName) {
+          mappings[field.originalName] = field.mappedName;
+        }
+      }
+
+      // Build field type overrides
+      const typeOverrides: Record<string, string> = {};
+      data.fields.forEach(f => {
+        if (fieldTypes[f.name] && fieldTypes[f.name] !== f.type) {
+          typeOverrides[f.name] = fieldTypes[f.name];
+        }
+      });
+
+      // Build transforms
+      const transforms: Record<string, FieldTransform[]> = {};
+      Object.keys(fieldTransforms).forEach(fieldName => {
+        if (fieldTransforms[fieldName]?.length > 0) {
+          transforms[fieldName] = fieldTransforms[fieldName];
+        }
+      });
+
+      const newTemplate = await createTemplate({
+        name: templateName,
+        description: templateDescription || undefined,
+        config: {
+          field_mappings: mappings,
+          excluded_fields: excluded,
+          timestamp_field: timestampField,
+          field_types: Object.keys(typeOverrides).length > 0 ? typeOverrides : undefined,
+          field_transforms: Object.keys(transforms).length > 0 ? transforms : undefined,
+        },
+      });
+
+      setTemplates(prev => [...prev, newTemplate]);
+      addToast(`Template "${templateName}" saved`, 'success');
+      setShowSaveTemplateModal(false);
+      setTemplateName('');
+      setTemplateDescription('');
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Failed to save template', 'error');
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  };
 
   const ecsFieldOptions = useMemo(() =>
     Object.entries(allEcsFields).map(([name, info]) => ({
@@ -273,6 +390,82 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
     );
   };
 
+  const buildIngestRequest = () => {
+    // Build field mappings (only include changed names)
+    const mappings: Record<string, string> = {};
+    const excluded: string[] = [];
+
+    for (const field of fieldMappings) {
+      if (field.excluded) {
+        excluded.push(field.originalName);
+      } else if (field.mappedName !== field.originalName) {
+        mappings[field.originalName] = field.mappedName;
+      }
+    }
+
+    // Build field type overrides (only include changed types)
+    const typeOverrides: Record<string, string> = {};
+    data.fields.forEach(f => {
+      if (fieldTypes[f.name] && fieldTypes[f.name] !== f.type) {
+        typeOverrides[f.name] = fieldTypes[f.name];
+      }
+    });
+
+    // Build field transforms (only include fields with transforms)
+    const transforms: Record<string, FieldTransform[]> = {};
+    Object.keys(fieldTransforms).forEach(fieldName => {
+      if (fieldTransforms[fieldName]?.length > 0) {
+        transforms[fieldName] = fieldTransforms[fieldName];
+      }
+    });
+
+    return {
+      index_name: indexName,
+      timestamp_field: timestampField,
+      field_mappings: mappings,
+      excluded_fields: excluded,
+      field_types: typeOverrides,
+      field_transforms: Object.keys(transforms).length > 0 ? transforms : undefined,
+      include_filename: includeFilename,
+      filename_field: filenameField,
+      geoip_fields: geoipFields.length > 0 ? geoipFields : undefined,
+    };
+  };
+
+  const handleValidate = async () => {
+    if (!indexName.trim()) {
+      setError('Index name is required');
+      return;
+    }
+
+    // Validate index name
+    if (indexName !== indexName.toLowerCase()) {
+      setError('Index name must be lowercase');
+      return;
+    }
+
+    const invalidChars = ['\\', '/', '*', '?', '"', '<', '>', '|', ' ', ',', '#', ':'];
+    for (const char of invalidChars) {
+      if (indexName.includes(char)) {
+        setError(`Index name cannot contain '${char}'`);
+        return;
+      }
+    }
+
+    setError(null);
+    setIsValidating(true);
+
+    try {
+      const result = await validateIngest(data.upload_id, buildIngestRequest());
+      setValidationResult(result);
+      setShowValidationModal(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Validation failed');
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
   const handleIngest = async () => {
     if (!indexName.trim()) {
       setError('Index name is required');
@@ -298,46 +491,8 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
     setProgress(null);
 
     try {
-      // Build field mappings (only include changed names)
-      const mappings: Record<string, string> = {};
-      const excluded: string[] = [];
-
-      for (const field of fieldMappings) {
-        if (field.excluded) {
-          excluded.push(field.originalName);
-        } else if (field.mappedName !== field.originalName) {
-          mappings[field.originalName] = field.mappedName;
-        }
-      }
-
-      // Build field type overrides (only include changed types)
-      const typeOverrides: Record<string, string> = {};
-      data.fields.forEach(f => {
-        if (fieldTypes[f.name] && fieldTypes[f.name] !== f.type) {
-          typeOverrides[f.name] = fieldTypes[f.name];
-        }
-      });
-
-      // Build field transforms (only include fields with transforms)
-      const transforms: Record<string, FieldTransform[]> = {};
-      Object.keys(fieldTransforms).forEach(fieldName => {
-        if (fieldTransforms[fieldName]?.length > 0) {
-          transforms[fieldName] = fieldTransforms[fieldName];
-        }
-      });
-
       // Start ingestion (returns immediately)
-      const startResult = await startIngest(data.upload_id, {
-        index_name: indexName,
-        timestamp_field: timestampField,
-        field_mappings: mappings,
-        excluded_fields: excluded,
-        field_types: typeOverrides,
-        field_transforms: Object.keys(transforms).length > 0 ? transforms : undefined,
-        include_filename: includeFilename,
-        filename_field: filenameField,
-        geoip_fields: geoipFields.length > 0 ? geoipFields : undefined,
-      });
+      const startResult = await startIngest(data.upload_id, buildIngestRequest());
 
       // Subscribe to progress updates via SSE
       const unsubscribe = subscribeToProgress(
@@ -480,7 +635,33 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
 
       {/* Index Configuration */}
       <div className={`bg-white dark:bg-gray-800 shadow rounded-lg p-6 ${isIngesting ? 'opacity-50 pointer-events-none' : ''}`}>
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Index Configuration</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Index Configuration</h3>
+          <div className="flex items-center gap-3">
+            {/* Apply Template Dropdown */}
+            {templates.length > 0 && (
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => e.target.value && applyTemplate(e.target.value)}
+                disabled={isIngesting}
+                className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+              >
+                <option value="">Apply Template...</option>
+                {templates.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            )}
+            {/* Save as Template Button */}
+            <button
+              onClick={() => setShowSaveTemplateModal(true)}
+              disabled={isIngesting}
+              className="px-3 py-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-600 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50"
+            >
+              Save as Template
+            </button>
+          </div>
+        </div>
 
         <div className="space-y-4">
           {/* Index Name */}
@@ -746,35 +927,66 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
         >
           Back to Preview
         </button>
-        <button
-          onClick={handleIngest}
-          disabled={isIngesting || !indexName.trim()}
-          className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-md hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
-        >
-          {isIngesting ? (
-            <>
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                  fill="none"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-              Ingesting...
-            </>
-          ) : (
-            'Start Ingestion'
-          )}
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={handleValidate}
+            disabled={isIngesting || isValidating || !indexName.trim()}
+            className="px-4 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-600 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50 flex items-center gap-2"
+          >
+            {isValidating ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                Validating...
+              </>
+            ) : (
+              'Validate'
+            )}
+          </button>
+          <button
+            onClick={handleIngest}
+            disabled={isIngesting || !indexName.trim()}
+            className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-md hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {isIngesting ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                Ingesting...
+              </>
+            ) : (
+              'Start Ingestion'
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Cancel Confirmation Dialog */}
@@ -840,6 +1052,191 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                 className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
               >
                 Delete Index
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Result Modal */}
+      {showValidationModal && validationResult && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Validation Result
+              </h3>
+              <span className={`px-2 py-1 text-xs font-medium rounded ${
+                validationResult.valid
+                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                  : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+              }`}>
+                {validationResult.valid ? 'Valid' : 'Has Conflicts'}
+              </span>
+            </div>
+
+            {/* Summary */}
+            <div className="mb-4 grid grid-cols-2 gap-4">
+              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
+                <div className="text-sm text-gray-500 dark:text-gray-400">Index Status</div>
+                <div className="text-lg font-medium text-gray-900 dark:text-white">
+                  {validationResult.index_exists ? 'Exists' : 'Will be created'}
+                </div>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
+                <div className="text-sm text-gray-500 dark:text-gray-400">Field Count</div>
+                <div className="text-lg font-medium text-gray-900 dark:text-white">
+                  {validationResult.field_count}
+                </div>
+              </div>
+            </div>
+
+            {/* Warnings */}
+            {validationResult.warnings.length > 0 && (
+              <div className="mb-4">
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Warnings</h4>
+                <div className="space-y-1">
+                  {validationResult.warnings.map((warning, idx) => (
+                    <div
+                      key={idx}
+                      className="px-3 py-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-sm text-yellow-800 dark:text-yellow-200"
+                    >
+                      {warning}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Conflicts */}
+            {validationResult.conflicts.length > 0 && (
+              <div className="mb-4">
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Type Conflicts</h4>
+                <div className="space-y-1">
+                  {validationResult.conflicts.map((conflict, idx) => (
+                    <div
+                      key={idx}
+                      className="px-3 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-800 dark:text-red-200"
+                    >
+                      <span className="font-medium">{conflict.field}</span>: existing type is{' '}
+                      <code className="bg-red-100 dark:bg-red-800 px-1 rounded">{conflict.existing_type}</code>
+                      , new type would be{' '}
+                      <code className="bg-red-100 dark:bg-red-800 px-1 rounded">{conflict.new_type}</code>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Mapping Preview */}
+            <div className="mb-4">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Mapping Preview</h4>
+              <pre className="p-3 bg-gray-100 dark:bg-gray-900 rounded-lg text-xs overflow-x-auto max-h-60">
+                {JSON.stringify(validationResult.mapping_preview, null, 2)}
+              </pre>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowValidationModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Close
+              </button>
+              {validationResult.valid && (
+                <button
+                  onClick={() => {
+                    setShowValidationModal(false);
+                    handleIngest();
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
+                >
+                  Proceed with Ingestion
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Template Modal */}
+      {showSaveTemplateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+              Save as Template
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Save the current field mappings, transforms, and settings as a reusable template.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                  Template Name *
+                </label>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="e.g., Apache Access Logs"
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={templateDescription}
+                  onChange={(e) => setTemplateDescription(e.target.value)}
+                  placeholder="Optional description..."
+                  rows={3}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowSaveTemplateModal(false);
+                  setTemplateName('');
+                  setTemplateDescription('');
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveTemplate}
+                disabled={isSavingTemplate || !templateName.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {isSavingTemplate ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  'Save Template'
+                )}
               </button>
             </div>
           </div>

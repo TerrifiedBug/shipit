@@ -181,6 +181,22 @@ docker run -p 80:80 --env-file .env shipit
 
 **Role Mapping:** OIDC groups are mapped to roles with priority: admin > user > viewer. If `OIDC_USER_GROUPS` or `OIDC_VIEWER_GROUPS` are configured, users not in any configured group are denied access. If neither is configured, all authenticated users get the "user" role (backward compatible).
 
+### Audit Log Shipping (Optional)
+
+Ship audit logs to external systems for compliance and centralized monitoring.
+
+| Variable | Description |
+|----------|-------------|
+| `AUDIT_LOG_TO_OPENSEARCH` | Set to `true` to ship audit logs to OpenSearch (creates `{INDEX_PREFIX}audit-logs` index) |
+| `AUDIT_LOG_ENDPOINT` | HTTP endpoint URL to POST audit events (e.g., `https://siem.company.com/api/logs`) |
+| `AUDIT_LOG_ENDPOINT_TOKEN` | Bearer token for HTTP endpoint authentication |
+| `AUDIT_LOG_ENDPOINT_HEADERS` | Additional HTTP headers (format: `Header1:value1,Header2:value2`) |
+
+**Notes:**
+- Both options are additive - audit logs are always stored locally AND shipped to configured destinations
+- HTTP shipping is fire-and-forget (logs warning on failure, doesn't retry)
+- OpenSearch shipping creates an index with proper mappings for audit events
+
 ## Required OpenSearch Permissions
 
 The OpenSearch user needs these permissions:

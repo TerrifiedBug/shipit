@@ -294,6 +294,7 @@ def init_db() -> None:
         _init_grok_patterns_table(conn)
         _init_chunked_uploads_table(conn)
         _init_custom_ecs_mappings_table(conn)
+        _init_index_templates_table(conn)
 
 
 @contextmanager
@@ -832,6 +833,8 @@ AUDIT_EVENT_INDEX_CREATED = "index_created"
 AUDIT_EVENT_INDEX_DELETED = "index_deleted"
 AUDIT_EVENT_INGESTION_STARTED = "ingestion_started"
 AUDIT_EVENT_INGESTION_COMPLETED = "ingestion_completed"
+AUDIT_EVENT_TEMPLATE_CREATED = "template_created"
+AUDIT_EVENT_TEMPLATE_DELETED = "template_deleted"
 
 
 def create_audit_log(
@@ -876,6 +879,12 @@ def create_audit_log(
             result["details"] = json.loads(result["details"])
         except json.JSONDecodeError:
             pass
+
+    # Ship audit log to external destinations if configured
+    from app.services.audit_shipping import ship_audit_log
+
+    ship_audit_log(result)
+
     return result
 
 
@@ -1534,4 +1543,126 @@ def delete_custom_ecs_mapping(mapping_id: str) -> bool:
     """
     with get_connection() as conn:
         cursor = conn.execute("DELETE FROM custom_ecs_mappings WHERE id = ?", (mapping_id,))
+    return cursor.rowcount > 0
+
+
+# ============================================================================
+# Index Templates
+# ============================================================================
+
+
+def _init_index_templates_table(conn: sqlite3.Connection) -> None:
+    """Create index templates table."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS index_templates (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            config TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_templates_name ON index_templates(name)")
+
+
+def create_index_template(
+    name: str,
+    config: dict,
+    created_by: str,
+    description: str | None = None,
+) -> dict:
+    """Create a new index template.
+
+    Args:
+        name: Template name (must be unique)
+        config: Template configuration (field mappings, exclusions, etc.)
+        created_by: User ID who created the template
+        description: Optional description of the template
+
+    Returns:
+        The created template record
+
+    Raises:
+        ValueError: If a template with the same name already exists
+    """
+    template_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+    config_json = json.dumps(config)
+
+    with get_connection() as conn:
+        try:
+            conn.execute(
+                """
+                INSERT INTO index_templates (id, name, description, config, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (template_id, name, description, config_json, created_by, now),
+            )
+        except sqlite3.IntegrityError:
+            raise ValueError(f"Template '{name}' already exists")
+
+    return {
+        "id": template_id,
+        "name": name,
+        "description": description,
+        "config": config,
+        "created_by": created_by,
+        "created_at": now,
+    }
+
+
+def get_index_template(template_id: str) -> dict | None:
+    """Get a template by ID.
+
+    Args:
+        template_id: The template ID
+
+    Returns:
+        Template record or None if not found
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT id, name, description, config, created_by, created_at FROM index_templates WHERE id = ?",
+            (template_id,),
+        ).fetchone()
+
+    if not row:
+        return None
+
+    result = dict(row)
+    result["config"] = json.loads(result["config"])
+    return result
+
+
+def list_index_templates() -> list[dict]:
+    """List all index templates.
+
+    Returns:
+        List of template records ordered by name
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, name, description, config, created_by, created_at FROM index_templates ORDER BY name"
+        ).fetchall()
+
+    templates = []
+    for row in rows:
+        t = dict(row)
+        t["config"] = json.loads(t["config"])
+        templates.append(t)
+    return templates
+
+
+def delete_index_template(template_id: str) -> bool:
+    """Delete an index template.
+
+    Args:
+        template_id: The ID of the template to delete
+
+    Returns:
+        True if the template was deleted, False if not found
+    """
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM index_templates WHERE id = ?", (template_id,))
     return cursor.rowcount > 0

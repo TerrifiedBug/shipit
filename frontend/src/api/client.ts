@@ -277,6 +277,19 @@ export interface IngestResponse {
   failed: number;
 }
 
+export interface ValidationResult {
+  valid: boolean;
+  index_exists: boolean;
+  conflicts: Array<{
+    field: string;
+    existing_type: string;
+    new_type: string;
+  }>;
+  warnings: string[];
+  mapping_preview: Record<string, unknown>;
+  field_count: number;
+}
+
 export async function startIngest(
   uploadId: string,
   request: IngestRequest
@@ -293,6 +306,27 @@ export async function startIngest(
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Ingestion failed');
+  }
+
+  return response.json();
+}
+
+export async function validateIngest(
+  uploadId: string,
+  request: IngestRequest
+): Promise<ValidationResult> {
+  const response = await fetch(`${API_BASE}/api/upload/${uploadId}/validate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Validation failed');
   }
 
   return response.json();
@@ -1000,5 +1034,76 @@ export async function deleteCustomEcsMapping(mappingId: string): Promise<void> {
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || 'Failed to delete custom ECS mapping');
+  }
+}
+
+// Index Templates types and functions
+export interface IndexTemplateConfig {
+  field_mappings: Record<string, string>;
+  excluded_fields: string[];
+  field_transforms?: Record<string, FieldTransform[]>;
+  timestamp_field?: string | null;
+  field_types?: Record<string, string>;
+}
+
+export interface IndexTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  config: IndexTemplateConfig;
+  created_by: string;
+  created_at: string;
+}
+
+export interface CreateTemplateRequest {
+  name: string;
+  description?: string;
+  config: IndexTemplateConfig;
+}
+
+export async function listTemplates(): Promise<IndexTemplate[]> {
+  const response = await fetch(`${API_BASE}/api/templates`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to list templates');
+  }
+  return response.json();
+}
+
+export async function getTemplate(templateId: string): Promise<IndexTemplate> {
+  const response = await fetch(`${API_BASE}/api/templates/${templateId}`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Template not found');
+  }
+  return response.json();
+}
+
+export async function createTemplate(data: CreateTemplateRequest): Promise<IndexTemplate> {
+  const response = await fetch(`${API_BASE}/api/templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to create template');
+  }
+  return response.json();
+}
+
+export async function deleteTemplate(templateId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/templates/${templateId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete template');
   }
 }

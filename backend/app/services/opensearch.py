@@ -261,3 +261,127 @@ def validate_index_name(index_name: str) -> tuple[bool, str]:
         return False, "Index name is too long (max 255 characters)"
 
     return True, ""
+
+
+def get_index_mapping(index_name: str) -> dict[str, Any] | None:
+    """Get the mapping for an existing index.
+
+    Returns None if the index doesn't exist.
+    """
+    try:
+        client = get_client()
+        response = client.indices.get_mapping(index=index_name)
+        # Response format: {index_name: {mappings: {...}}}
+        if index_name in response:
+            return response[index_name].get("mappings", {})
+        return None
+    except TransportError as e:
+        if e.status_code == 404:
+            return None
+        raise
+
+
+def index_exists(index_name: str) -> bool:
+    """Check if an index exists in OpenSearch."""
+    try:
+        client = get_client()
+        return client.indices.exists(index=index_name)
+    except Exception:
+        return False
+
+
+def build_mapping_from_types(field_types: dict[str, str]) -> dict[str, Any]:
+    """Build an OpenSearch mapping from field type specifications.
+
+    Args:
+        field_types: Dict mapping field names to types (text, keyword, long, etc.)
+
+    Returns:
+        OpenSearch mapping properties dict
+    """
+    # Map our type names to OpenSearch types
+    type_mapping = {
+        "text": {"type": "text"},
+        "keyword": {"type": "keyword"},
+        "long": {"type": "long"},
+        "integer": {"type": "integer"},
+        "float": {"type": "float"},
+        "double": {"type": "double"},
+        "boolean": {"type": "boolean"},
+        "date": {"type": "date"},
+        "ip": {"type": "ip"},
+        "geo_point": {"type": "geo_point"},
+    }
+
+    properties = {}
+    for field_name, field_type in field_types.items():
+        # Handle nested fields (e.g., "source.ip")
+        parts = field_name.split(".")
+        current = properties
+
+        for i, part in enumerate(parts[:-1]):
+            if part not in current:
+                current[part] = {"properties": {}}
+            elif "properties" not in current[part]:
+                current[part]["properties"] = {}
+            current = current[part]["properties"]
+
+        final_field = parts[-1]
+        os_type = type_mapping.get(field_type, {"type": "keyword"})
+        current[final_field] = os_type
+
+    return {"properties": properties}
+
+
+def check_mapping_conflicts(
+    existing_mapping: dict[str, Any],
+    new_field_types: dict[str, str]
+) -> list[dict[str, str]]:
+    """Check for mapping conflicts between existing index and new field types.
+
+    Returns list of conflicts, each with: field, existing_type, new_type
+    """
+    conflicts = []
+
+    existing_props = existing_mapping.get("properties", {})
+
+    def get_nested_type(props: dict, path: list[str]) -> str | None:
+        """Get the type of a potentially nested field."""
+        current = props
+        for part in path[:-1]:
+            if part not in current:
+                return None
+            current = current.get(part, {}).get("properties", {})
+        final = path[-1]
+        if final in current:
+            return current[final].get("type")
+        return None
+
+    for field_name, new_type in new_field_types.items():
+        parts = field_name.split(".")
+        existing_type = get_nested_type(existing_props, parts)
+
+        if existing_type and existing_type != new_type:
+            # Check for compatible type changes
+            compatible_changes = [
+                # text and keyword can coexist in some cases
+                ({"text", "keyword"}, {"text", "keyword"}),
+                # numeric types can be widened
+                ({"integer", "long"}, {"long"}),
+                ({"float", "double"}, {"double"}),
+            ]
+
+            is_compatible = False
+            for from_types, to_types in compatible_changes:
+                if existing_type in from_types and new_type in to_types:
+                    is_compatible = True
+                    break
+
+            if not is_compatible:
+                conflicts.append({
+                    "field": field_name,
+                    "existing_type": existing_type,
+                    "new_type": new_type,
+                })
+
+    return conflicts

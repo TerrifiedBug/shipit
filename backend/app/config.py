@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "info"  # debug, info, warning, error
 
+    # Audit log shipping
+    audit_log_to_opensearch: bool = False  # Ship audit logs to OpenSearch
+    audit_log_endpoint: str | None = None  # HTTP endpoint URL (e.g., https://siem.company.com/api/logs)
+    audit_log_endpoint_token: str | None = None  # Bearer token for HTTP endpoint
+    audit_log_endpoint_headers: str | None = None  # Additional headers (format: Header1:value1,Header2:value2)
+
     class Config:
         env_file = ".env"
 
