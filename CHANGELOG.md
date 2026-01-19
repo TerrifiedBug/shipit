@@ -16,14 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Field transformations: lowercase, uppercase, trim, regex_extract, regex_replace, truncate, base64_decode, url_decode, hash_sha256, mask_email, mask_ip, default, parse_json, parse_kv
 - Format validation with suggested alternatives when mismatch detected
 - Trusted proxy configuration for X-Forwarded-For
+- Nested JSON flattening - automatically converts nested objects to dot-notation (e.g., `log.level`)
+- Bulk grok pattern import - import pattern files from GitHub (Cisco ASA, etc.) via paste or file upload
+- OpenSearch connectivity status indicator in header with cluster info popover
+- LOG_LEVEL configuration for diagnostic output (debug, info, warning, error)
 
 ### Changed
 - Large file uploads now use chunked upload automatically (>100MB)
+- ECS mapping now uses official Elastic schema with 200+ fields
+- ECS auto-mapping removes ambiguous fields (e.g., `remote_ip` no longer auto-maps)
 
 ### Fixed
 - SQL injection vulnerability in dynamic column updates
 - Default session secret now fails in production environment
 - Timing attack in authentication (constant-time comparison)
+- GeoIP checkbox now detects IP fields by value validation, not field name patterns
 
 ### Security
 - Added column allowlists for database updates

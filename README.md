@@ -164,6 +164,7 @@ docker run -p 80:80 --env-file .env shipit
 | `BULK_BATCH_SIZE` | `1000` | Number of records per bulk insert to OpenSearch |
 | `MAXMIND_LICENSE_KEY` | - | MaxMind GeoLite2 license key for GeoIP enrichment (auto-downloads DB) |
 | `GEOIP_AUTO_UPDATE_DAYS` | `7` | Auto-update GeoIP database interval in days (0 to disable) |
+| `LOG_LEVEL` | `info` | Logging verbosity: `debug`, `info`, `warning`, `error` |
 
 ### OIDC SSO (Optional)
 
