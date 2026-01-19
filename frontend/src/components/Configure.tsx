@@ -1131,7 +1131,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
             {/* Mapping Preview */}
             <div className="mb-4">
               <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Mapping Preview</h4>
-              <pre className="p-3 bg-gray-100 dark:bg-gray-900 rounded-lg text-xs overflow-x-auto max-h-60">
+              <pre className="p-3 bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 rounded-lg text-xs overflow-x-auto max-h-60">
                 {JSON.stringify(validationResult.mapping_preview, null, 2)}
               </pre>
             </div>
