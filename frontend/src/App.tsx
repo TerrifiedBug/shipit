@@ -10,6 +10,7 @@ import { Users } from './components/Users';
 import { Audit } from './components/Audit';
 import { PatternLibrary } from './components/PatternLibrary';
 import { PasswordChangeModal } from './components/PasswordChangeModal';
+import { OpenSearchStatus } from './components/OpenSearchStatus';
 import { IngestResponse, UploadResponse, deletePendingUpload } from './api/client';
 import { useTheme } from './contexts/ThemeContext';
 import { useAuth } from './contexts/AuthContext';
@@ -253,6 +254,7 @@ function App() {
               </a>
             )}
             <div className="flex items-center gap-2">
+              <OpenSearchStatus />
               <ThemeToggle />
               {user?.is_admin ? (
                 <>
