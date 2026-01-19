@@ -176,6 +176,10 @@ docker run -p 80:80 --env-file .env shipit
 | `OIDC_CLIENT_SECRET` | OIDC client secret |
 | `OIDC_ALLOWED_DOMAIN` | Optional: restrict to email domain (e.g., `example.com`) |
 | `OIDC_ADMIN_GROUP` | Optional: group name that grants admin role (e.g., `shipit-admins`) |
+| `OIDC_USER_GROUPS` | Optional: JSON array of groups that grant user role (e.g., `["shipit-users"]`) |
+| `OIDC_VIEWER_GROUPS` | Optional: JSON array of groups that grant viewer role (e.g., `["shipit-auditors"]`) |
+
+**Role Mapping:** OIDC groups are mapped to roles with priority: admin > user > viewer. If `OIDC_USER_GROUPS` or `OIDC_VIEWER_GROUPS` are configured, users not in any configured group are denied access. If neither is configured, all authenticated users get the "user" role (backward compatible).
 
 ## Required OpenSearch Permissions
 
@@ -285,7 +289,7 @@ ShipIt supports OIDC SSO for enterprise deployments. When enabled:
 2. Local login remains available as a fallback
 3. New users are auto-provisioned on first login
 4. Optional domain restriction limits which email domains can authenticate
-5. Admin role can be assigned based on group membership from the IdP
+5. Roles can be assigned based on group membership from the IdP
 
 **OIDC Setup:**
 
@@ -293,6 +297,18 @@ ShipIt supports OIDC SSO for enterprise deployments. When enabled:
 2. Set the callback URL to `{APP_URL}/api/auth/callback`
 3. Configure the OIDC environment variables (see above)
 4. Ensure the IdP returns `email`, `name`, and optionally `groups` claims
+
+### User Roles
+
+ShipIt has three user roles:
+
+| Role | Capabilities |
+|------|-------------|
+| **Admin** | Full access: upload, delete, manage users, view audit logs, configure settings |
+| **User** | Standard access: upload files, configure mappings, delete own indices |
+| **Viewer** | Read-only: view upload history and audit logs (for compliance/auditing) |
+
+For local users, admins assign roles via the Users management UI. For OIDC users, roles are mapped from IdP group membership (see OIDC configuration above).
 
 ### User Management (Admin Only)
 

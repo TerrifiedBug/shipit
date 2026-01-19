@@ -658,6 +658,15 @@ async def oidc_callback(
 
             # Update user info from OIDC (name, role from groups)
             new_role = oidc_service.get_role_from_groups(user_info.groups)
+
+            # Check if user is denied access (not in any configured group)
+            if new_role is None:
+                frontend_url = settings.app_url or "http://localhost:5173"
+                return RedirectResponse(
+                    url=f"{frontend_url}?error=Access denied: not in any authorized group",
+                    status_code=302,
+                )
+
             current_role = user.get("role", "user")
 
             # Role update logic: only upgrade, never downgrade
@@ -676,6 +685,15 @@ async def oidc_callback(
         else:
             # Auto-provision new user
             role = oidc_service.get_role_from_groups(user_info.groups)
+
+            # Check if user is denied access (not in any configured group)
+            if role is None:
+                frontend_url = settings.app_url or "http://localhost:5173"
+                return RedirectResponse(
+                    url=f"{frontend_url}?error=Access denied: not in any authorized group",
+                    status_code=302,
+                )
+
             user = create_user(
                 email=user_info.email,
                 name=user_info.name,

@@ -151,17 +151,28 @@ class OIDCService:
 
         return settings.oidc_admin_group in groups
 
-    def get_role_from_groups(self, groups: list[str]) -> str:
+    def get_role_from_groups(self, groups: list[str]) -> str | None:
         """Determine user role based on OIDC group membership.
 
         Priority: admin > user > viewer
         - If user is in admin group -> 'admin'
+        - If user is in any user group -> 'user'
         - If user is in any viewer group -> 'viewer'
-        - Otherwise -> 'user' (default)
+        - If no role groups configured -> 'user' (default, backward compatible)
+        - If role groups configured but user not in any -> None (access denied)
+
+        Returns:
+            Role string ('admin', 'user', 'viewer') or None if access should be denied.
         """
         # Admin takes priority
         if self.is_admin_from_groups(groups):
             return "admin"
+
+        # Check user groups
+        if settings.oidc_user_groups:
+            for user_group in settings.oidc_user_groups:
+                if user_group in groups:
+                    return "user"
 
         # Check viewer groups
         if settings.oidc_viewer_groups:
@@ -169,7 +180,11 @@ class OIDCService:
                 if viewer_group in groups:
                     return "viewer"
 
-        # Default to regular user
+        # If any role groups are configured, deny access to users not in any group
+        if settings.oidc_user_groups or settings.oidc_viewer_groups:
+            return None  # Access denied - user not in any configured group
+
+        # Default to regular user (backward compatible when no groups configured)
         return "user"
 
 
