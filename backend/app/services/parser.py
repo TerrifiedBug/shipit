@@ -13,6 +13,22 @@ from app.config import settings
 FileFormat = Literal["json_array", "ndjson", "csv", "tsv", "ltsv", "syslog", "logfmt", "raw"]
 
 
+def flatten_dict(obj: dict, parent_key: str = "", sep: str = ".") -> dict:
+    """Flatten nested dict to dot-notation keys.
+
+    Arrays are preserved as-is, only dicts are flattened.
+    Example: {"a": {"b": 1}} -> {"a.b": 1}
+    """
+    items = {}
+    for key, value in obj.items():
+        new_key = f"{parent_key}{sep}{key}" if parent_key else key
+        if isinstance(value, dict):
+            items.update(flatten_dict(value, new_key, sep))
+        else:
+            items[new_key] = value
+    return items
+
+
 class FormatValidationError(Exception):
     """Raised when file content doesn't match selected format."""
 
@@ -182,7 +198,7 @@ def _parse_json_array(file_path: Path, limit: int) -> list[dict]:
     records = []
     with open(file_path, "rb") as f:
         for item in ijson.items(f, "item"):
-            records.append(item)
+            records.append(flatten_dict(item) if isinstance(item, dict) else item)
             if len(records) >= limit:
                 break
     return records
@@ -196,7 +212,8 @@ def _parse_ndjson(file_path: Path, limit: int) -> list[dict]:
             line = line.strip()
             if not line:
                 continue
-            records.append(json.loads(line))
+            record = json.loads(line)
+            records.append(flatten_dict(record) if isinstance(record, dict) else record)
             if len(records) >= limit:
                 break
     return records

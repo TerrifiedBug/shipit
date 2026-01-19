@@ -263,3 +263,60 @@ class TestParseWithPattern:
         assert len(records) == 2
         assert records[0]["client_ip"] == "192.168.1.1"
         assert records[0]["username"] == "admin"
+
+
+class TestFlattenNestedObjects:
+    """Test that nested JSON objects are flattened to dot-notation."""
+
+    def test_parse_ndjson_flattens_nested_objects(self, temp_dir):
+        """Nested JSON objects should be flattened to dot-notation."""
+        content = '{"user": {"name": "alice", "id": 123}, "event": {"type": "login"}}\n'
+        file_path = temp_dir / "nested.json"
+        file_path.write_text(content)
+
+        records = parse_preview(file_path, "ndjson", limit=100)
+
+        assert len(records) == 1
+        record = records[0]
+        # Nested objects flattened to dot-notation
+        assert record["user.name"] == "alice"
+        assert record["user.id"] == 123
+        assert record["event.type"] == "login"
+        # Original nested keys should not exist
+        assert "user" not in record or not isinstance(record.get("user"), dict)
+
+    def test_parse_json_array_flattens_nested_objects(self, temp_dir):
+        """JSON array with nested objects should be flattened."""
+        content = '[{"log": {"level": "INFO"}, "message": "test"}]'
+        file_path = temp_dir / "nested_array.json"
+        file_path.write_text(content)
+
+        records = parse_preview(file_path, "json_array", limit=100)
+
+        assert len(records) == 1
+        record = records[0]
+        assert record["log.level"] == "INFO"
+        assert record["message"] == "test"
+
+    def test_flatten_preserves_arrays(self, temp_dir):
+        """Arrays should not be flattened, only dicts."""
+        content = '{"tags": ["a", "b"], "meta": {"version": 1}}\n'
+        file_path = temp_dir / "with_array.json"
+        file_path.write_text(content)
+
+        records = parse_preview(file_path, "ndjson", limit=100)
+
+        record = records[0]
+        assert record["tags"] == ["a", "b"]  # Array preserved
+        assert record["meta.version"] == 1   # Dict flattened
+
+    def test_flatten_deeply_nested(self, temp_dir):
+        """Deeply nested objects should flatten with full path."""
+        content = '{"a": {"b": {"c": {"d": "value"}}}}\n'
+        file_path = temp_dir / "deep.json"
+        file_path.write_text(content)
+
+        records = parse_preview(file_path, "ndjson", limit=100)
+
+        record = records[0]
+        assert record["a.b.c.d"] == "value"
