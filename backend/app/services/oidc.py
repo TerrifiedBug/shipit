@@ -151,6 +151,27 @@ class OIDCService:
 
         return settings.oidc_admin_group in groups
 
+    def get_role_from_groups(self, groups: list[str]) -> str:
+        """Determine user role based on OIDC group membership.
+
+        Priority: admin > user > viewer
+        - If user is in admin group -> 'admin'
+        - If user is in any viewer group -> 'viewer'
+        - Otherwise -> 'user' (default)
+        """
+        # Admin takes priority
+        if self.is_admin_from_groups(groups):
+            return "admin"
+
+        # Check viewer groups
+        if settings.oidc_viewer_groups:
+            for viewer_group in settings.oidc_viewer_groups:
+                if viewer_group in groups:
+                    return "viewer"
+
+        # Default to regular user
+        return "user"
+
 
 # Singleton instance
 oidc_service = OIDCService()

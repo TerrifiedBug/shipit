@@ -2,10 +2,11 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.config import settings
+from app.routers.auth import require_viewer_or_above
 from app.services.database import get_upload, list_uploads
 from app.services.opensearch import list_indexes
 
@@ -17,8 +18,12 @@ async def get_history(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     status: Optional[str] = Query(None),
+    user: dict = Depends(require_viewer_or_above),
 ):
-    """List past uploads with optional filtering."""
+    """List past uploads with optional filtering.
+
+    Accessible by all authenticated roles (admin, user, viewer).
+    """
     uploads = list_uploads(limit=limit, offset=offset, status=status)
 
     # Get all existing indexes in one call (returns None if permission denied)
@@ -51,8 +56,14 @@ def _validate_upload_id(upload_id: str) -> str:
 
 
 @router.get("/upload/{upload_id}/failures")
-async def download_failures(upload_id: str):
-    """Download failed records for an upload as JSON."""
+async def download_failures(
+    upload_id: str,
+    user: dict = Depends(require_viewer_or_above),
+):
+    """Download failed records for an upload as JSON.
+
+    Accessible by all authenticated roles (admin, user, viewer).
+    """
     safe_id = _validate_upload_id(upload_id)
     upload = get_upload(safe_id)
     if not upload:

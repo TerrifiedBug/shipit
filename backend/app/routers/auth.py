@@ -208,6 +208,78 @@ def require_auth(request: Request) -> dict:
     return user
 
 
+def get_user_role(user: dict) -> str:
+    """Get the user's role, with backward compatibility for users without role column."""
+    if user.get("role"):
+        return user["role"]
+    # Backward compatibility: derive role from is_admin
+    return "admin" if user.get("is_admin") else "user"
+
+
+def require_role(*allowed_roles: str):
+    """Dependency factory for role-based access control.
+
+    Usage:
+        @router.get("/endpoint")
+        def endpoint(user: dict = Depends(require_role("admin", "user"))):
+            ...
+    """
+    def dependency(request: Request) -> dict:
+        user = get_current_user(request)
+        if not user:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        user_role = get_user_role(user)
+        if user_role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return user
+    return dependency
+
+
+# Convenience dependencies for common role combinations
+def require_admin(request: Request) -> dict:
+    """Dependency that requires admin role."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if get_user_role(user) != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+def require_user_or_admin(request: Request) -> dict:
+    """Dependency that requires user or admin role (excludes viewers)."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if get_user_role(user) not in ("user", "admin"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return user
+
+
+def require_viewer_or_above(request: Request) -> dict:
+    """Dependency that requires any authenticated role (viewer, user, or admin)."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if get_user_role(user) not in ("viewer", "user", "admin"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return user
+
+
+def require_admin_or_viewer(request: Request) -> dict:
+    """Dependency that requires admin or viewer role (for audit log access).
+
+    This is a specialized permission for audit logs where viewers (auditors)
+    need access but regular users should not have access.
+    """
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if get_user_role(user) not in ("admin", "viewer"):
+        raise HTTPException(status_code=403, detail="Audit log access requires admin or viewer role")
+    return user
+
+
 def get_auth_context(request: Request) -> dict | None:
     """Get authentication context including method and API key info.
 
@@ -584,23 +656,31 @@ async def oidc_callback(
                     status_code=302,
                 )
 
-            # Update user info from OIDC (name, admin status from groups)
-            is_admin = oidc_service.is_admin_from_groups(user_info.groups)
-            update_user(
-                user["id"],
-                name=user_info.name or user["name"],
-                is_admin=1 if is_admin else user["is_admin"],  # Only upgrade, never downgrade
-            )
+            # Update user info from OIDC (name, role from groups)
+            new_role = oidc_service.get_role_from_groups(user_info.groups)
+            current_role = user.get("role", "user")
+
+            # Role update logic: only upgrade, never downgrade
+            # Priority: admin > user > viewer
+            role_priority = {"admin": 3, "user": 2, "viewer": 1}
+            should_update_role = role_priority.get(new_role, 0) > role_priority.get(current_role, 0)
+
+            update_kwargs = {"name": user_info.name or user["name"]}
+            if should_update_role:
+                update_kwargs["role"] = new_role
+                update_kwargs["is_admin"] = 1 if new_role == "admin" else 0
+
+            update_user(user["id"], **update_kwargs)
             update_user_last_login(user["id"])
             user = get_user_by_id(user["id"])
         else:
             # Auto-provision new user
-            is_admin = oidc_service.is_admin_from_groups(user_info.groups)
+            role = oidc_service.get_role_from_groups(user_info.groups)
             user = create_user(
                 email=user_info.email,
                 name=user_info.name,
                 auth_type="oidc",
-                is_admin=is_admin,
+                role=role,
             )
             update_user_last_login(user["id"])
 

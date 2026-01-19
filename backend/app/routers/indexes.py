@@ -5,7 +5,7 @@ from app.services import audit
 from app.services.opensearch import delete_index
 from app.services.database import mark_index_deleted, untrack_index
 from app.services.request_utils import get_client_ip
-from app.routers.auth import require_auth
+from app.routers.auth import require_user_or_admin
 
 router = APIRouter(prefix="/indexes", tags=["indexes"])
 
@@ -14,9 +14,12 @@ router = APIRouter(prefix="/indexes", tags=["indexes"])
 def delete_index_endpoint(
     index_name: str,
     request: Request,
-    user: dict = Depends(require_auth),
+    user: dict = Depends(require_user_or_admin),
 ):
-    """Delete an OpenSearch index."""
+    """Delete an OpenSearch index.
+
+    Requires user or admin role. Viewers cannot delete indices.
+    """
     # Validate index has required prefix
     if not index_name.startswith(settings.index_prefix):
         raise HTTPException(

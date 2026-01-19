@@ -647,3 +647,250 @@ class TestIpAllowlistValidation:
         assert _is_ip_allowed("192.168.1.5", "invalid, 192.168.1.5") is True
         # All entries invalid, nothing matches
         assert _is_ip_allowed("192.168.1.5", "invalid, also-invalid") is False
+
+
+class TestViewerRole:
+    """Tests for the viewer role (read-only auditor access)."""
+
+    def _setup_admin(self, db):
+        """Helper to setup the initial admin user via the setup endpoint."""
+        # Use a unique email to avoid conflicts with other tests
+        client.post("/api/auth/setup", json={
+            "email": "test-admin-setup@example.com",
+            "password": "AdminPass123",
+            "name": "Test Admin",
+        })
+        response = client.post("/api/auth/login", json={
+            "email": "test-admin-setup@example.com",
+            "password": "AdminPass123",
+        })
+        return response.cookies
+
+    def _create_viewer_user(self, db, email="viewer@example.com"):
+        """Helper to create a viewer user and return login cookies."""
+        # First, ensure we have an admin to create users
+        admin_cookies = self._setup_admin(db)
+
+        # Create the viewer user via admin API
+        client.post("/api/admin/users", json={
+            "email": email,
+            "name": "Viewer User",
+            "password": "ViewerPass123",
+            "role": "viewer",
+        }, cookies=admin_cookies)
+
+        # Now login as the viewer to get their cookies
+        login_response = client.post("/api/auth/login", json={
+            "email": email,
+            "password": "ViewerPass123",
+        })
+        user = get_user_by_email(email)
+        return login_response.cookies, user
+
+    def _create_admin_user(self, db, email="admin@example.com"):
+        """Helper to create an admin user and return login cookies."""
+        # First, ensure we have an admin to create users
+        admin_cookies = self._setup_admin(db)
+
+        # Create the new admin user via admin API
+        client.post("/api/admin/users", json={
+            "email": email,
+            "name": "Admin User",
+            "password": "AdminPass123",
+            "role": "admin",
+        }, cookies=admin_cookies)
+
+        # Login as the new admin
+        login_response = client.post("/api/auth/login", json={
+            "email": email,
+            "password": "AdminPass123",
+        })
+        user = get_user_by_email(email)
+        return login_response.cookies, user
+
+    def _create_regular_user(self, db, email="user@example.com"):
+        """Helper to create a regular user and return login cookies."""
+        # First, ensure we have an admin to create users
+        admin_cookies = self._setup_admin(db)
+
+        # Create the user via admin API
+        client.post("/api/admin/users", json={
+            "email": email,
+            "name": "Regular User",
+            "password": "UserPass123",
+            "role": "user",
+        }, cookies=admin_cookies)
+
+        # Login as the user
+        login_response = client.post("/api/auth/login", json={
+            "email": email,
+            "password": "UserPass123",
+        })
+        user = get_user_by_email(email)
+        return login_response.cookies, user
+
+    def test_viewer_user_created_with_role(self, db):
+        """Test that viewer users are created with correct role."""
+        cookies, user = self._create_viewer_user(db)
+        assert user["role"] == "viewer"
+        assert user["is_admin"] == 0
+
+    def test_viewer_cannot_upload(self, db):
+        """Test that viewers cannot upload files."""
+        cookies, _ = self._create_viewer_user(db, "viewer-upload@example.com")
+
+        # Attempt to initiate a chunked upload
+        response = client.post(
+            "/api/upload/chunked/init",
+            data={"filename": "test.json", "file_size": 1000},
+            cookies=cookies,
+        )
+        assert response.status_code == 403
+        assert "permissions" in response.json()["detail"].lower()
+
+    def test_viewer_cannot_delete_index(self, db):
+        """Test that viewers cannot delete indices."""
+        cookies, _ = self._create_viewer_user(db, "viewer-delete@example.com")
+
+        response = client.delete(
+            "/api/indexes/shipit-test-index",
+            cookies=cookies,
+        )
+        assert response.status_code == 403
+        assert "permissions" in response.json()["detail"].lower()
+
+    def test_viewer_can_read_history(self, db):
+        """Test that viewers CAN read upload history."""
+        cookies, _ = self._create_viewer_user(db, "viewer-history@example.com")
+
+        response = client.get("/api/history", cookies=cookies)
+        assert response.status_code == 200
+        assert "uploads" in response.json()
+
+    def test_viewer_can_read_audit_logs(self, db):
+        """Test that viewers CAN read audit logs (key feature)."""
+        cookies, _ = self._create_viewer_user(db, "viewer-audit@example.com")
+
+        response = client.get("/api/audit/logs", cookies=cookies)
+        assert response.status_code == 200
+        assert "logs" in response.json()
+
+    def test_regular_user_cannot_read_audit_logs(self, db):
+        """Test that regular users CANNOT read audit logs."""
+        cookies, _ = self._create_regular_user(db, "user-audit@example.com")
+
+        response = client.get("/api/audit/logs", cookies=cookies)
+        assert response.status_code == 403
+
+    def test_admin_can_read_audit_logs(self, db):
+        """Test that admins CAN read audit logs."""
+        cookies, _ = self._create_admin_user(db, "admin-audit@example.com")
+
+        response = client.get("/api/audit/logs", cookies=cookies)
+        assert response.status_code == 200
+        assert "logs" in response.json()
+
+    def test_viewer_cannot_create_api_key(self, db):
+        """Test that viewers cannot create API keys."""
+        cookies, _ = self._create_viewer_user(db, "viewer-keys@example.com")
+
+        response = client.post(
+            "/api/keys",
+            json={"name": "Test Key", "expires_in_days": 30},
+            cookies=cookies,
+        )
+        assert response.status_code == 403
+        assert "permissions" in response.json()["detail"].lower()
+
+    def test_regular_user_can_upload(self, db):
+        """Test that regular users CAN upload files."""
+        cookies, _ = self._create_regular_user(db, "user-upload@example.com")
+
+        # Attempt to initiate a chunked upload
+        response = client.post(
+            "/api/upload/chunked/init",
+            data={"filename": "test.json", "file_size": 1000},
+            cookies=cookies,
+        )
+        assert response.status_code == 200
+        assert "upload_id" in response.json()
+
+
+class TestRoleHelpers:
+    """Tests for role helper functions."""
+
+    def test_get_user_role_with_role_field(self):
+        """Test get_user_role returns role from role field."""
+        from app.routers.auth import get_user_role
+
+        user = {"role": "viewer", "is_admin": False}
+        assert get_user_role(user) == "viewer"
+
+        user = {"role": "admin", "is_admin": True}
+        assert get_user_role(user) == "admin"
+
+        user = {"role": "user", "is_admin": False}
+        assert get_user_role(user) == "user"
+
+    def test_get_user_role_fallback_to_is_admin(self):
+        """Test get_user_role falls back to is_admin when role is None."""
+        from app.routers.auth import get_user_role
+
+        user = {"role": None, "is_admin": True}
+        assert get_user_role(user) == "admin"
+
+        user = {"role": None, "is_admin": False}
+        assert get_user_role(user) == "user"
+
+        user = {"is_admin": True}  # No role field at all
+        assert get_user_role(user) == "admin"
+
+        user = {"is_admin": False}  # No role field at all
+        assert get_user_role(user) == "user"
+
+
+class TestRoleCreationAndUpdate:
+    """Tests for creating and updating users with roles."""
+
+    def test_create_user_with_viewer_role(self, db):
+        """Test creating a user with viewer role."""
+        user = create_user(
+            email="create-viewer@example.com",
+            name="Viewer",
+            auth_type="local",
+            role="viewer",
+        )
+        assert user["role"] == "viewer"
+        assert user["is_admin"] == 0
+
+    def test_create_user_with_admin_role(self, db):
+        """Test creating a user with admin role syncs is_admin."""
+        user = create_user(
+            email="create-admin@example.com",
+            name="Admin",
+            auth_type="local",
+            role="admin",
+        )
+        assert user["role"] == "admin"
+        assert user["is_admin"] == 1
+
+    def test_create_user_with_is_admin_fallback(self, db):
+        """Test creating a user with is_admin sets role for backward compat."""
+        user = create_user(
+            email="create-isadmin@example.com",
+            name="Admin Old Style",
+            auth_type="local",
+            is_admin=True,
+        )
+        assert user["role"] == "admin"
+        assert user["is_admin"] == 1
+
+    def test_create_user_default_role(self, db):
+        """Test that default role is 'user'."""
+        user = create_user(
+            email="create-default@example.com",
+            name="Default User",
+            auth_type="local",
+        )
+        assert user["role"] == "user"
+        assert user["is_admin"] == 0

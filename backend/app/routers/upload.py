@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import StreamingResponse
 
 from app.config import settings
-from app.routers.auth import require_auth
+from app.routers.auth import require_auth, require_user_or_admin
 from app.services.request_utils import get_client_ip
 from app.models import FieldInfo, IngestRequest, PreviewResponse, UploadResponse
 from app.services import database as db
@@ -100,13 +100,19 @@ def _read_raw_lines(file_paths: list[Path], limit: int = 10) -> list[str]:
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_files(files: list[UploadFile] = File(...), request: Request = None):
-    """Upload one or more files and return preview data."""
+async def upload_files(
+    files: list[UploadFile] = File(...),
+    request: Request = None,
+    user: dict = Depends(require_user_or_admin),
+):
+    """Upload one or more files and return preview data.
+
+    Requires user or admin role. Viewers cannot upload files.
+    """
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
     # Check rate limit
-    user = getattr(request.state, "user", None) if request else None
     user_id = user["id"] if user else None
     client_ip = get_client_ip(request)
 
@@ -207,7 +213,6 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
         raw_preview = _read_raw_lines(saved_files, limit=10)
 
         # Create database record (use sanitized filenames)
-        user = getattr(request.state, "user", None) if request else None
         db.create_upload(
             upload_id=upload_id,
             filenames=sanitized_filenames,
@@ -244,11 +249,16 @@ async def upload_files(files: list[UploadFile] = File(...), request: Request = N
 
 
 @router.get("/upload/{upload_id}", response_model=UploadResponse)
-async def get_upload(upload_id: str, request: Request = None):
+async def get_upload(
+    upload_id: str,
+    request: Request = None,
+    user: dict = Depends(require_user_or_admin),
+):
     """Get upload metadata for a completed chunked upload.
 
     This endpoint is called after chunked upload completes to fetch
     the parsed metadata (format, fields, preview) for the assembled file.
+    Requires user or admin role. Viewers cannot upload files.
     """
     safe_id = _validate_upload_id(upload_id)
 
@@ -286,7 +296,6 @@ async def get_upload(upload_id: str, request: Request = None):
         file_size = file_path.stat().st_size
 
         # Create database record for history/tracking
-        user = getattr(request.state, "user", None) if request else None
         db.create_upload(
             upload_id=safe_id,
             filenames=[filename],
@@ -421,9 +430,12 @@ async def reparse_upload(
     format: str = Form(...),
     pattern_id: str | None = Form(None),
     multiline_start: str | None = Form(None),
-    user: dict = Depends(require_auth),
+    user: dict = Depends(require_user_or_admin),
 ):
-    """Re-parse uploaded file with a different format."""
+    """Re-parse uploaded file with a different format.
+
+    Requires user or admin role. Viewers cannot reparse files.
+    """
     safe_id = _validate_upload_id(upload_id)
     upload = db.get_upload(safe_id)
     if not upload:
@@ -675,8 +687,16 @@ def _run_ingestion_task(
 
 
 @router.post("/upload/{upload_id}/ingest")
-async def start_ingest(upload_id: str, request: IngestRequest, http_request: Request = None):
-    """Start ingestion of uploaded file(s) into OpenSearch (async)."""
+async def start_ingest(
+    upload_id: str,
+    request: IngestRequest,
+    http_request: Request = None,
+    user: dict = Depends(require_user_or_admin),
+):
+    """Start ingestion of uploaded file(s) into OpenSearch (async).
+
+    Requires user or admin role. Viewers cannot ingest files.
+    """
     safe_id = _validate_upload_id(upload_id)
     upload = db.get_upload(safe_id)
     if not upload:
@@ -754,8 +774,7 @@ async def start_ingest(upload_id: str, request: IngestRequest, http_request: Req
         "estimated_remaining_seconds": 0,
     }
 
-    # Get user for index tracking
-    user = getattr(http_request.state, "user", None) if http_request else None
+    # Get user_id for index tracking
     user_id = user["id"] if user else None
 
     # Convert field_transforms from Pydantic models to dicts for the service layer
@@ -802,8 +821,15 @@ async def start_ingest(upload_id: str, request: IngestRequest, http_request: Req
 
 
 @router.post("/upload/{upload_id}/cancel")
-async def cancel_ingest(upload_id: str, delete_index: bool = False):
-    """Cancel an in-progress ingestion."""
+async def cancel_ingest(
+    upload_id: str,
+    delete_index: bool = False,
+    user: dict = Depends(require_user_or_admin),
+):
+    """Cancel an in-progress ingestion.
+
+    Requires user or admin role. Viewers cannot cancel ingestions.
+    """
     safe_id = _validate_upload_id(upload_id)
     upload = db.get_upload(safe_id)
     if not upload:
@@ -956,8 +982,12 @@ def _get_chunks_dir() -> Path:
 async def init_chunked_upload(
     filename: str = Form(...),
     file_size: int = Form(...),
+    user: dict = Depends(require_user_or_admin),
 ):
-    """Initialize a chunked upload."""
+    """Initialize a chunked upload.
+
+    Requires user or admin role. Viewers cannot upload files.
+    """
     # Validate file size
     max_size = settings.max_file_size_mb * 1024 * 1024
     if file_size > max_size:
@@ -976,7 +1006,7 @@ async def init_chunked_upload(
         file_size=file_size,
         chunk_size=chunk_size,
         total_chunks=total_chunks,
-        user_id="anonymous",  # Auth will be added later
+        user_id=user["id"] if user else "anonymous",
         retention_hours=settings.chunk_retention_hours,
     )
 
@@ -992,8 +1022,12 @@ async def upload_chunk(
     upload_id: str,
     chunk_index: int,
     request: Request,
+    user: dict = Depends(require_user_or_admin),
 ):
-    """Upload a single chunk."""
+    """Upload a single chunk.
+
+    Requires user or admin role. Viewers cannot upload files.
+    """
     safe_id = _validate_upload_id(upload_id)
     upload = db.get_chunked_upload(safe_id)
     if not upload:
@@ -1036,8 +1070,14 @@ async def get_chunked_upload_status(upload_id: str):
 
 
 @router.post("/upload/chunked/{upload_id}/complete")
-async def complete_chunked_upload(upload_id: str):
-    """Complete a chunked upload by reassembling chunks."""
+async def complete_chunked_upload(
+    upload_id: str,
+    user: dict = Depends(require_user_or_admin),
+):
+    """Complete a chunked upload by reassembling chunks.
+
+    Requires user or admin role. Viewers cannot upload files.
+    """
     safe_id = _validate_upload_id(upload_id)
     upload = db.get_chunked_upload(safe_id)
     if not upload:

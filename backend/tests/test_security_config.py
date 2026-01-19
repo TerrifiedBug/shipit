@@ -54,7 +54,7 @@ class TestStartupSecurityCheck:
         mock_settings.session_secret = "change-me-in-production"
         mock_settings.shipit_env = "production"
 
-        with patch("app.main.settings", mock_settings):
+        with patch("app.main.app_settings", mock_settings):
             from app.main import lifespan
 
             mock_app = MagicMock()
@@ -72,7 +72,7 @@ class TestStartupSecurityCheck:
         mock_settings.session_secret = "change-me-in-production"
         mock_settings.shipit_env = "development"
 
-        with patch("app.main.settings", mock_settings), \
+        with patch("app.main.app_settings", mock_settings), \
              patch("app.main.init_db"), \
              patch("app.main.start_retention_task"), \
              patch("app.main.stop_retention_task"), \
@@ -97,7 +97,7 @@ class TestStartupSecurityCheck:
         mock_settings.session_secret = "my-custom-secure-secret"
         mock_settings.shipit_env = "development"
 
-        with patch("app.main.settings", mock_settings), \
+        with patch("app.main.app_settings", mock_settings), \
              patch("app.main.init_db"), \
              patch("app.main.start_retention_task"), \
              patch("app.main.stop_retention_task"), \

@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from app.routers.admin import require_admin
+from app.routers.auth import require_admin_or_viewer
 from app.services import database as db
 
 router = APIRouter(prefix="/audit", tags=["audit"])
@@ -41,11 +41,11 @@ def list_audit_logs(
     event_type: str | None = Query(None, description="Filter by event type"),
     actor_id: str | None = Query(None, description="Filter by actor ID"),
     target_type: str | None = Query(None, description="Filter by target type"),
-    admin: dict = Depends(require_admin),
+    user: dict = Depends(require_admin_or_viewer),
 ):
     """List audit logs with pagination and filtering.
 
-    Only accessible by admin users.
+    Accessible by admin and viewer (auditor) roles.
     """
     offset = (page - 1) * page_size
 
@@ -82,10 +82,10 @@ def list_audit_logs(
 
 
 @router.get("/event-types", response_model=EventTypesResponse)
-def get_event_types(admin: dict = Depends(require_admin)):
+def get_event_types(user: dict = Depends(require_admin_or_viewer)):
     """Get list of distinct event types for filtering.
 
-    Only accessible by admin users.
+    Accessible by admin and viewer (auditor) roles.
     """
     event_types = db.get_audit_log_event_types()
     return EventTypesResponse(event_types=event_types)

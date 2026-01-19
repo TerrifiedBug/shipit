@@ -1,11 +1,14 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // Auth types and functions
+export type UserRole = 'admin' | 'user' | 'viewer';
+
 export interface User {
   id: string;
   email: string;
   name: string;
-  is_admin: number;
+  is_admin: number;  // Kept for backward compatibility
+  role?: UserRole;   // New role field (admin, user, viewer)
   auth_type: 'local' | 'oidc';
   password_change_required?: boolean;
 }
@@ -479,7 +482,8 @@ export interface AdminUser {
   id: string;
   email: string;
   name: string | null;
-  is_admin: boolean;
+  is_admin: boolean;  // Kept for backward compatibility
+  role: UserRole;     // New role field (admin, user, viewer)
   is_active: boolean;
   auth_type: string;
   created_at: string;
@@ -490,12 +494,14 @@ export interface CreateUserRequest {
   email: string;
   name: string;
   password: string;
-  is_admin: boolean;
+  is_admin?: boolean;  // Deprecated, use role
+  role?: UserRole;     // New role field
 }
 
 export interface UpdateUserRequest {
   name?: string;
-  is_admin?: boolean;
+  is_admin?: boolean;  // Deprecated, use role
+  role?: UserRole;     // New role field
   new_password?: string;
 }
 

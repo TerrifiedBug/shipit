@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     oidc_client_secret: Optional[str] = None
     oidc_allowed_domain: Optional[str] = None
     oidc_admin_group: Optional[str] = None
+    oidc_viewer_groups: list[str] = []  # Groups that map to viewer role
 
     # GeoIP settings
     maxmind_license_key: str | None = None

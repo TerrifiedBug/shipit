@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app.routers.auth import require_auth
+from app.routers.auth import require_auth, require_user_or_admin
 from app.services import audit
 from app.services.auth import generate_api_key
 from app.services.request_utils import get_client_ip
@@ -24,8 +24,10 @@ class CreateKeyRequest(BaseModel):
 
 
 @router.post("")
-def create_key(request: CreateKeyRequest, http_request: Request = None, user: dict = Depends(require_auth)):
+def create_key(request: CreateKeyRequest, http_request: Request = None, user: dict = Depends(require_user_or_admin)):
     """Create a new API key. The key is only shown once.
+
+    Requires user or admin role. Viewers cannot create API keys.
 
     Args:
         name: Human-readable name for the key
@@ -86,8 +88,11 @@ def list_keys(user: dict = Depends(require_auth)):
 
 
 @router.delete("/{key_id}")
-def delete_key(key_id: str, http_request: Request = None, user: dict = Depends(require_auth)):
-    """Delete an API key."""
+def delete_key(key_id: str, http_request: Request = None, user: dict = Depends(require_user_or_admin)):
+    """Delete an API key.
+
+    Requires user or admin role. Viewers cannot manage API keys.
+    """
     api_key = get_api_key_by_id(key_id)
     if not api_key or api_key["user_id"] != user["id"]:
         raise HTTPException(status_code=404, detail="API key not found")

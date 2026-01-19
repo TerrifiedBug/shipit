@@ -1,11 +1,30 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { AdminUser, listUsers, createUser, updateUser, deleteUser, activateUser, deactivateUser } from '../api/client';
+import { AdminUser, UserRole, listUsers, createUser, updateUser, deleteUser, activateUser, deactivateUser } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
 interface UsersProps {
   onClose: () => void;
 }
+
+// Role display labels and descriptions
+const ROLE_INFO: Record<UserRole, { label: string; description: string; color: string }> = {
+  admin: {
+    label: 'Admin',
+    description: 'Full access to all features',
+    color: 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300',
+  },
+  user: {
+    label: 'User',
+    description: 'Can upload and manage files',
+    color: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
+  },
+  viewer: {
+    label: 'Viewer',
+    description: 'Read-only access to history and audit logs',
+    color: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300',
+  },
+};
 
 export function Users({ onClose }: UsersProps) {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -20,12 +39,12 @@ export function Users({ onClose }: UsersProps) {
   const [createEmail, setCreateEmail] = useState('');
   const [createName, setCreateName] = useState('');
   const [createPassword, setCreatePassword] = useState('');
-  const [createIsAdmin, setCreateIsAdmin] = useState(false);
+  const [createRole, setCreateRole] = useState<UserRole>('user');
   const [creating, setCreating] = useState(false);
 
   // Edit form state
   const [editName, setEditName] = useState('');
-  const [editIsAdmin, setEditIsAdmin] = useState(false);
+  const [editRole, setEditRole] = useState<UserRole>('user');
   const [editNewPassword, setEditNewPassword] = useState('');
   const [updating, setUpdating] = useState(false);
 
@@ -33,8 +52,8 @@ export function Users({ onClose }: UsersProps) {
   const isCreateDirty = showCreateForm && (createEmail.trim() || createName.trim() || createPassword);
   const isEditDirty = useMemo(() => {
     if (!editingUser) return false;
-    return editName !== (editingUser.name || '') || editIsAdmin !== editingUser.is_admin || editNewPassword.length > 0;
-  }, [editingUser, editName, editIsAdmin, editNewPassword]);
+    return editName !== (editingUser.name || '') || editRole !== editingUser.role || editNewPassword.length > 0;
+  }, [editingUser, editName, editRole, editNewPassword]);
   const isDirty = isCreateDirty || isEditDirty;
 
   // Wrap onClose with dirty state confirmation
@@ -80,7 +99,7 @@ export function Users({ onClose }: UsersProps) {
               setCreateEmail('');
               setCreateName('');
               setCreatePassword('');
-              setCreateIsAdmin(false);
+              setCreateRole('user');
             }
           } else {
             setShowCreateForm(false);
@@ -120,13 +139,13 @@ export function Users({ onClose }: UsersProps) {
         email: createEmail,
         name: createName,
         password: createPassword,
-        is_admin: createIsAdmin,
+        role: createRole,
       });
       setUsers([newUser, ...users]);
       setCreateEmail('');
       setCreateName('');
       setCreatePassword('');
-      setCreateIsAdmin(false);
+      setCreateRole('user');
       setShowCreateForm(false);
       addToast('User created successfully. They will need to change their password on first login.', 'success');
     } catch (err) {
@@ -139,7 +158,7 @@ export function Users({ onClose }: UsersProps) {
   const startEdit = (user: AdminUser) => {
     setEditingUser(user);
     setEditName(user.name || '');
-    setEditIsAdmin(user.is_admin);
+    setEditRole(user.role);
     setEditNewPassword('');
   };
 
@@ -149,9 +168,9 @@ export function Users({ onClose }: UsersProps) {
     setUpdating(true);
 
     try {
-      const updateData: { name?: string; is_admin?: boolean; new_password?: string } = {};
+      const updateData: { name?: string; role?: UserRole; new_password?: string } = {};
       if (editName !== editingUser.name) updateData.name = editName;
-      if (editIsAdmin !== editingUser.is_admin) updateData.is_admin = editIsAdmin;
+      if (editRole !== editingUser.role) updateData.role = editRole;
       if (editNewPassword) updateData.new_password = editNewPassword;
 
       const updatedUser = await updateUser(editingUser.id, updateData);
@@ -277,18 +296,19 @@ export function Users({ onClose }: UsersProps) {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                   />
                 </div>
-                <div className="flex items-center">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={createIsAdmin}
-                      onChange={(e) => setCreateIsAdmin(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                    />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Admin privileges
-                    </span>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Role
                   </label>
+                  <select
+                    value={createRole}
+                    onChange={(e) => setCreateRole(e.target.value as UserRole)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value="admin">Admin - Full access</option>
+                    <option value="user">User - Can upload and manage</option>
+                    <option value="viewer">Viewer - Read-only access</option>
+                  </select>
                 </div>
               </div>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
@@ -373,11 +393,9 @@ export function Users({ onClose }: UsersProps) {
                               Inactive
                             </span>
                           )}
-                          {user.is_admin && (
-                            <span className="px-2 py-0.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 rounded">
-                              Admin
-                            </span>
-                          )}
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded ${ROLE_INFO[user.role].color}`}>
+                            {ROLE_INFO[user.role].label}
+                          </span>
                           {user.auth_type !== 'local' && (
                             <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded">
                               {user.auth_type.toUpperCase()}
@@ -496,17 +514,21 @@ export function Users({ onClose }: UsersProps) {
                   )}
                 </div>
                 <div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editIsAdmin}
-                      onChange={(e) => setEditIsAdmin(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                    />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Admin privileges
-                    </span>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Role
                   </label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value as UserRole)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="admin">Admin - Full access</option>
+                    <option value="user">User - Can upload and manage</option>
+                    <option value="viewer">Viewer - Read-only access</option>
+                  </select>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    {ROLE_INFO[editRole].description}
+                  </p>
                 </div>
                 {editingUser.auth_type === 'local' && (
                   <div>

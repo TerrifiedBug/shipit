@@ -17,9 +17,22 @@ def require_admin(request: Request) -> dict:
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    if not user.get("is_admin"):
+    # Check both role and legacy is_admin field for backward compatibility
+    is_admin = user.get("role") == "admin" or user.get("is_admin")
+    if not is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+# Valid roles for the application
+VALID_ROLES = ("admin", "user", "viewer")
+
+
+def _get_role_from_user(user: dict) -> str:
+    """Get role from user dict, with backward compatibility for is_admin."""
+    if user.get("role"):
+        return user["role"]
+    return "admin" if user.get("is_admin") else "user"
 
 
 # Request/Response models
@@ -27,12 +40,14 @@ class CreateUserRequest(BaseModel):
     email: EmailStr
     name: str
     password: str
-    is_admin: bool = False
+    is_admin: bool = False  # Deprecated, use role instead
+    role: Optional[str] = None  # New role field (admin, user, viewer)
 
 
 class UpdateUserRequest(BaseModel):
     name: Optional[str] = None
-    is_admin: Optional[bool] = None
+    is_admin: Optional[bool] = None  # Deprecated, use role instead
+    role: Optional[str] = None  # New role field
     new_password: Optional[str] = None
 
 
@@ -40,7 +55,8 @@ class UserResponse(BaseModel):
     id: str
     email: str
     name: Optional[str]
-    is_admin: bool
+    is_admin: bool  # Kept for backward compatibility
+    role: str  # New field: admin, user, or viewer
     is_active: bool
     auth_type: str
     created_at: str
@@ -58,6 +74,7 @@ def list_users(admin: dict = Depends(require_admin)):
                 email=u["email"],
                 name=u["name"],
                 is_admin=bool(u["is_admin"]),
+                role=_get_role_from_user(u),
                 is_active=bool(u.get("is_active", True)),
                 auth_type=u["auth_type"],
                 created_at=u["created_at"],
@@ -87,13 +104,25 @@ def create_user(request: CreateUserRequest, http_request: Request = None, admin:
             status_code=400, detail="Password must be at least 8 characters"
         )
 
+    # Determine role: explicit role takes precedence, then is_admin, then default 'user'
+    role = request.role
+    if role:
+        if role not in VALID_ROLES:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid role. Must be one of: {', '.join(VALID_ROLES)}"
+            )
+    elif request.is_admin:
+        role = "admin"
+    else:
+        role = "user"
+
     # Create user with password_change_required flag
     user = db.create_user(
         email=request.email,
         name=request.name,
         auth_type="local",
         password_hash=hash_password(request.password),
-        is_admin=request.is_admin,
+        role=role,
         password_change_required=True,
     )
 
@@ -103,7 +132,7 @@ def create_user(request: CreateUserRequest, http_request: Request = None, admin:
         actor_name=admin.get("email", ""),
         target_user_id=user["id"],
         target_email=request.email,
-        is_admin=request.is_admin,
+        is_admin=(role == "admin"),
         ip_address=get_client_ip(http_request) if http_request else None,
     )
 
@@ -112,6 +141,7 @@ def create_user(request: CreateUserRequest, http_request: Request = None, admin:
         email=user["email"],
         name=user["name"],
         is_admin=bool(user["is_admin"]),
+        role=_get_role_from_user(user),
         is_active=bool(user.get("is_active", True)),
         auth_type=user["auth_type"],
         created_at=user["created_at"],
@@ -131,14 +161,26 @@ def update_user(
     if not user or user.get("deleted_at"):
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Determine target role (explicit role takes precedence, then is_admin)
+    target_role = request.role
+    if target_role:
+        if target_role not in VALID_ROLES:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid role. Must be one of: {', '.join(VALID_ROLES)}"
+            )
+    elif request.is_admin is not None:
+        target_role = "admin" if request.is_admin else "user"
+
+    current_role = _get_role_from_user(user)
+
     # Prevent admin from removing their own admin status
-    if user_id == admin["id"] and request.is_admin is False:
+    if user_id == admin["id"] and target_role and target_role != "admin":
         raise HTTPException(
             status_code=400, detail="Cannot remove your own admin status"
         )
 
     # Check if this would leave no admins
-    if request.is_admin is False and user.get("is_admin"):
+    if target_role and target_role != "admin" and current_role == "admin":
         admin_count = db.count_admins()
         if admin_count <= 1:
             raise HTTPException(
@@ -152,10 +194,12 @@ def update_user(
         updates["name"] = request.name
         if user.get("name") != request.name:
             changes["name"] = {"from": user.get("name"), "to": request.name}
-    if request.is_admin is not None:
-        updates["is_admin"] = 1 if request.is_admin else 0
-        if bool(user.get("is_admin")) != request.is_admin:
-            changes["is_admin"] = {"from": bool(user.get("is_admin")), "to": request.is_admin}
+
+    if target_role and target_role != current_role:
+        updates["role"] = target_role
+        updates["is_admin"] = 1 if target_role == "admin" else 0
+        changes["role"] = {"from": current_role, "to": target_role}
+
     if request.new_password is not None:
         if len(request.new_password) < 8:
             raise HTTPException(
@@ -185,6 +229,7 @@ def update_user(
         email=updated["email"],
         name=updated["name"],
         is_admin=bool(updated["is_admin"]),
+        role=_get_role_from_user(updated),
         is_active=bool(updated.get("is_active", True)),
         auth_type=updated["auth_type"],
         created_at=updated["created_at"],
@@ -266,6 +311,7 @@ def deactivate_user(user_id: str, http_request: Request = None, admin: dict = De
         email=updated["email"],
         name=updated["name"],
         is_admin=bool(updated["is_admin"]),
+        role=_get_role_from_user(updated),
         is_active=bool(updated.get("is_active", True)),
         auth_type=updated["auth_type"],
         created_at=updated["created_at"],
@@ -298,6 +344,7 @@ def activate_user(user_id: str, http_request: Request = None, admin: dict = Depe
         email=updated["email"],
         name=updated["name"],
         is_admin=bool(updated["is_admin"]),
+        role=_get_role_from_user(updated),
         is_active=bool(updated.get("is_active", True)),
         auth_type=updated["auth_type"],
         created_at=updated["created_at"],

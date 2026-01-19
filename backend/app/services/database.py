@@ -21,7 +21,7 @@ ALLOWED_UPLOAD_COLUMNS = frozenset({
 
 ALLOWED_USER_COLUMNS = frozenset({
     "name", "password_hash", "is_admin", "is_active", "failed_attempts",
-    "locked_until", "password_change_required", "last_login", "deleted_at"
+    "locked_until", "password_change_required", "last_login", "deleted_at", "role"
 })
 
 
@@ -107,7 +107,8 @@ def _init_users_table(conn: sqlite3.Connection) -> None:
             password_change_required INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_login TIMESTAMP,
-            deleted_at TIMESTAMP
+            deleted_at TIMESTAMP,
+            role TEXT DEFAULT 'user'
         )
     """)
     # Migration: add new columns if they don't exist
@@ -115,11 +116,17 @@ def _init_users_table(conn: sqlite3.Connection) -> None:
         ("password_change_required", "INTEGER DEFAULT 0"),
         ("deleted_at", "TIMESTAMP"),
         ("is_active", "INTEGER DEFAULT 1"),
+        ("role", "TEXT DEFAULT 'user'"),
     ]:
         try:
             conn.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
         except sqlite3.OperationalError:
             pass  # Column already exists
+
+    # Migration: populate role column from is_admin for existing users
+    # Users with is_admin=1 get role='admin', others get role='user'
+    conn.execute("UPDATE users SET role = 'admin' WHERE is_admin = 1 AND (role IS NULL OR role = 'user')")
+    conn.execute("UPDATE users SET role = 'user' WHERE role IS NULL")
 
 
 def _init_api_keys_table(conn: sqlite3.Connection) -> None:
@@ -536,12 +543,29 @@ def create_user(
     password_hash: str | None = None,
     is_admin: bool = False,
     password_change_required: bool = False,
+    role: str | None = None,
 ) -> dict:
     """Create a new user or reactivate a deleted user.
 
     If a user with the same email was previously deleted, reactivate them
     with the new information instead of creating a duplicate.
+
+    Args:
+        email: User's email address
+        name: User's display name
+        auth_type: Authentication type ('local' or 'oidc')
+        password_hash: Hashed password for local auth
+        is_admin: Whether user is an admin (deprecated, use role='admin')
+        password_change_required: Whether user must change password
+        role: User role ('admin', 'user', or 'viewer'). If None, derived from is_admin.
     """
+    # Determine role: explicit role takes precedence, otherwise derive from is_admin
+    if role is None:
+        role = "admin" if is_admin else "user"
+
+    # Sync is_admin with role for backward compatibility
+    is_admin_int = 1 if role == "admin" else 0
+
     with get_connection() as conn:
         # Check if a deleted user exists with this email
         existing = conn.execute(
@@ -555,20 +579,20 @@ def create_user(
             conn.execute(
                 """UPDATE users
                    SET name = ?, auth_type = ?, password_hash = ?, is_admin = ?,
-                       password_change_required = ?, deleted_at = NULL, is_active = 1
+                       password_change_required = ?, deleted_at = NULL, is_active = 1, role = ?
                    WHERE id = ?""",
-                (name, auth_type, password_hash, 1 if is_admin else 0,
-                 1 if password_change_required else 0, user_id),
+                (name, auth_type, password_hash, is_admin_int,
+                 1 if password_change_required else 0, role, user_id),
             )
         else:
             # Create new user
             user_id = str(uuid.uuid4())
             conn.execute(
                 """
-                INSERT INTO users (id, email, name, auth_type, password_hash, is_admin, password_change_required)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (id, email, name, auth_type, password_hash, is_admin, password_change_required, role)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (user_id, email, name, auth_type, password_hash, 1 if is_admin else 0, 1 if password_change_required else 0),
+                (user_id, email, name, auth_type, password_hash, is_admin_int, 1 if password_change_required else 0, role),
             )
 
     return get_user_by_id(user_id)
