@@ -39,6 +39,14 @@ export function PatternLibrary({ onClose }: PatternLibraryProps) {
   const [editingPattern, setEditingPattern] = useState<Pattern | null>(null);
   const { addToast } = useToast();
 
+  // Import modal state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importContent, setImportContent] = useState('');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importOverwrite, setImportOverwrite] = useState(false);
+  const [importResult, setImportResult] = useState<{imported: number; skipped: number; errors: string[]} | null>(null);
+  const [importing, setImporting] = useState(false);
+
   useEffect(() => {
     loadAllPatterns();
   }, []);
@@ -90,6 +98,53 @@ export function PatternLibrary({ onClose }: PatternLibraryProps) {
         'error'
       );
     }
+  };
+
+  // Import handlers
+  const handleImport = async () => {
+    const content = importFile ? await importFile.text() : importContent;
+    if (!content.trim()) return;
+
+    setImporting(true);
+    setImportResult(null);
+
+    try {
+      const response = await fetch('/api/patterns/grok/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, overwrite: importOverwrite }),
+      });
+
+      if (!response.ok) throw new Error('Import failed');
+
+      const result = await response.json();
+      setImportResult(result);
+
+      if (result.imported > 0) {
+        // Refresh pattern list
+        loadAllPatterns();
+      }
+    } catch (error) {
+      setImportResult({ imported: 0, skipped: 0, errors: ['Import failed: ' + (error as Error).message] });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImportFile(file);
+      setImportContent('');
+    }
+  };
+
+  const closeImportModal = () => {
+    setShowImportModal(false);
+    setImportContent('');
+    setImportFile(null);
+    setImportResult(null);
+    setImportOverwrite(false);
   };
 
   const filteredBuiltin = builtinPatterns.filter(
@@ -192,15 +247,26 @@ export function PatternLibrary({ onClose }: PatternLibraryProps) {
             </svg>
           </div>
           {activeTab === 'custom-grok' && (
-            <button
-              onClick={() => setShowAddGrokModal(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add Grok Pattern
-            </button>
+            <>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Import
+              </button>
+              <button
+                onClick={() => setShowAddGrokModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Grok Pattern
+              </button>
+            </>
           )}
           {activeTab === 'patterns' && (
             <button
@@ -300,6 +366,83 @@ export function PatternLibrary({ onClose }: PatternLibraryProps) {
             setEditingPattern(null);
           }}
         />
+      )}
+
+      {/* Import Grok Patterns Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-2xl mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Import Grok Patterns</h3>
+
+            <div className="space-y-4">
+              {/* File upload */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Upload file</label>
+                <input
+                  type="file"
+                  accept=".txt,.grok"
+                  onChange={handleFileChange}
+                  className="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:bg-gray-200 dark:file:bg-gray-700 file:text-gray-700 dark:file:text-white hover:file:bg-gray-300 dark:hover:file:bg-gray-600"
+                />
+              </div>
+
+              <div className="text-center text-gray-500 dark:text-gray-400">- or -</div>
+
+              {/* Paste content */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Paste content</label>
+                <textarea
+                  value={importContent}
+                  onChange={(e) => { setImportContent(e.target.value); setImportFile(null); }}
+                  placeholder={"# Comment\nPATTERN_NAME pattern_expression\n..."}
+                  className="w-full h-40 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md font-mono text-sm text-gray-900 dark:text-white"
+                />
+              </div>
+
+              {/* Overwrite option */}
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={importOverwrite}
+                  onChange={(e) => setImportOverwrite(e.target.checked)}
+                  className="rounded border-gray-300 dark:border-gray-600"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">Overwrite existing patterns with same name</span>
+              </label>
+
+              {/* Result display */}
+              {importResult && (
+                <div className={`p-3 rounded ${importResult.errors.length > 0 ? 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200' : 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200'}`}>
+                  <p>Imported: {importResult.imported}, Skipped: {importResult.skipped}</p>
+                  {importResult.errors.length > 0 && (
+                    <ul className="mt-2 text-sm list-disc list-inside">
+                      {importResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={closeImportModal}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                {importResult ? 'Close' : 'Cancel'}
+              </button>
+              {!importResult && (
+                <button
+                  onClick={handleImport}
+                  disabled={importing || (!importContent.trim() && !importFile)}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {importing ? 'Importing...' : 'Import'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
