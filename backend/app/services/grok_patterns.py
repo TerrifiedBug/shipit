@@ -17,6 +17,37 @@ from typing import Any
 from app.services.database import get_grok_patterns_dict
 
 
+def parse_grok_file(content: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """Parse grok pattern file content.
+
+    Format: PATTERN_NAME<whitespace>pattern_expression
+    Lines starting with # are comments.
+    Blank lines are skipped.
+
+    Returns:
+        Tuple of (patterns, errors) where patterns is list of (name, pattern) tuples
+        and errors is list of error messages for invalid lines.
+    """
+    patterns = []
+    errors = []
+
+    for line_num, line in enumerate(content.splitlines(), 1):
+        line = line.strip()
+
+        # Skip comments and blank lines
+        if not line or line.startswith("#"):
+            continue
+
+        # Split on first whitespace
+        match = re.match(r"^(\S+)\s+(.+)$", line)
+        if match:
+            patterns.append((match.group(1), match.group(2)))
+        else:
+            errors.append(f"Line {line_num}: invalid format - expected 'NAME pattern'")
+
+    return patterns, errors
+
+
 # Default timeout for regex matching (in seconds)
 REGEX_TIMEOUT_SECONDS = 5
 

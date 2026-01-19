@@ -17,6 +17,7 @@ from app.services.grok_patterns import (
     safe_regex_match,
     RegexTimeoutError,
     expand_grok,
+    parse_grok_file,
 )
 
 router = APIRouter(prefix="/api/patterns", tags=["patterns"])
@@ -103,6 +104,19 @@ class PatternTestResponse(BaseModel):
     success: bool
     matches: dict | None = None
     error: str | None = None
+
+
+class GrokImportRequest(BaseModel):
+    """Request model for bulk importing grok patterns."""
+    content: str
+    overwrite: bool = False
+
+
+class GrokImportResult(BaseModel):
+    """Response model for bulk grok pattern import."""
+    imported: int
+    skipped: int
+    errors: list[str]
 
 
 # =============================================================================
@@ -267,6 +281,48 @@ async def create_grok_pattern(
         raise HTTPException(status_code=500, detail="Failed to create grok pattern")
 
     return GrokPatternResponse(**pattern)
+
+
+@router.post("/grok/import", response_model=GrokImportResult)
+async def import_grok_patterns(
+    request: GrokImportRequest,
+    user: dict = Depends(require_auth),
+) -> GrokImportResult:
+    """Import multiple grok patterns from file content.
+
+    Parses grok pattern file format (PATTERN_NAME<whitespace>pattern_expression).
+    Lines starting with # are comments, blank lines are skipped.
+
+    Args:
+        request: Contains the file content and overwrite flag
+
+    Returns:
+        Import result with counts of imported, skipped patterns and any parse errors
+    """
+    patterns, parse_errors = parse_grok_file(request.content)
+
+    imported = 0
+    skipped = 0
+
+    for name, regex in patterns:
+        # Check if pattern exists
+        existing = database.get_grok_pattern_by_name(name)
+
+        if existing:
+            if request.overwrite:
+                database.update_grok_pattern(existing["id"], regex=regex)
+                imported += 1
+            else:
+                skipped += 1
+        else:
+            database.create_grok_pattern(name, regex, user["email"])
+            imported += 1
+
+    return GrokImportResult(
+        imported=imported,
+        skipped=skipped,
+        errors=parse_errors
+    )
 
 
 @router.get("/grok/{pattern_id}")
