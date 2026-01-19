@@ -116,22 +116,16 @@ function looksLikeIpValue(value: unknown): boolean {
   return IP_PATTERN.test(str);
 }
 
-// Helper to detect IP fields - checks both name and sample values
-function isLikelyIpField(fieldName: string, sampleValues: unknown[]): boolean {
-  // Check field name hints
-  const lower = fieldName.toLowerCase();
-  const hasIpName = lower.includes('ip') || lower.includes('addr') || lower === 'source' || lower === 'destination';
+// Helper to detect IP fields - checks sample values only
+function isLikelyIpField(_fieldName: string, sampleValues: unknown[]): boolean {
+  const validSamples = sampleValues.filter(v =>
+    v !== null && v !== undefined && String(v).trim() !== ''
+  );
+  if (validSamples.length === 0) return false;
 
-  // If name suggests IP, verify at least some values look like IPs
-  if (hasIpName) {
-    const validSamples = sampleValues.filter(v => v !== null && v !== undefined && String(v).trim() !== '');
-    if (validSamples.length === 0) return false;
-    // At least 50% of non-empty samples should look like IPs
-    const ipCount = validSamples.filter(looksLikeIpValue).length;
-    return ipCount >= validSamples.length * 0.5;
-  }
-
-  return false;
+  // At least 50% of non-empty samples should look like IPs
+  const ipCount = validSamples.filter(looksLikeIpValue).length;
+  return ipCount >= validSamples.length * 0.5;
 }
 
 interface FieldMapping {
