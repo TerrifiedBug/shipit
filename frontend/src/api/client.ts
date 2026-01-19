@@ -885,6 +885,30 @@ export async function deleteGrokPattern(patternId: string): Promise<void> {
   }
 }
 
+// Grok pattern import
+export interface GrokImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+export async function importGrokPatterns(
+  content: string,
+  overwrite: boolean
+): Promise<GrokImportResult> {
+  const response = await fetch(`${API_BASE}/api/patterns/grok/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ content, overwrite }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to import grok patterns');
+  }
+  return response.json();
+}
+
 // Grok pattern expansion
 export interface GrokExpandResponse {
   expanded: string | null;

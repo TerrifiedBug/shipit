@@ -9,6 +9,7 @@ import {
   createPattern,
   deleteGrokPattern,
   deletePattern,
+  importGrokPatterns,
   listBuiltinGrokPatterns,
   listGrokPatterns,
   listPatterns,
@@ -109,18 +110,11 @@ export function PatternLibrary({ onClose }: PatternLibraryProps) {
     setImportResult(null);
 
     try {
-      const response = await fetch('/api/patterns/grok/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, overwrite: importOverwrite }),
-      });
-
-      if (!response.ok) throw new Error('Import failed');
-
-      const result = await response.json();
+      const result = await importGrokPatterns(content, importOverwrite);
       setImportResult(result);
 
       if (result.imported > 0) {
+        addToast(`Imported ${result.imported} pattern(s)`, 'success');
         // Refresh pattern list
         loadAllPatterns();
       }
