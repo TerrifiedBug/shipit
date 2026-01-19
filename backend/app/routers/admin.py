@@ -376,21 +376,24 @@ def get_audit_shipping_status(admin: dict = Depends(require_admin)):
         },
     }
 
-    # If OpenSearch shipping is enabled, try to check index existence
+    # If OpenSearch shipping is enabled, try to get document count
+    # (avoids indices.exists which requires special permissions)
     if settings.audit_log_to_opensearch:
         try:
             from app.services.audit_shipping import _get_opensearch_client
 
             client = _get_opensearch_client()
-            index_exists = client.indices.exists(index=AUDIT_INDEX_NAME)
-            status["opensearch"]["index_exists"] = index_exists
-
-            if index_exists:
-                # Get document count
-                count_result = client.count(index=AUDIT_INDEX_NAME)
-                status["opensearch"]["document_count"] = count_result.get("count", 0)
+            # Try to count documents - this tells us if index exists and is accessible
+            count_result = client.count(index=AUDIT_INDEX_NAME)
+            status["opensearch"]["index_exists"] = True
+            status["opensearch"]["document_count"] = count_result.get("count", 0)
         except Exception as e:
-            status["opensearch"]["error"] = str(e)
+            error_str = str(e).lower()
+            if "index_not_found" in error_str or "no such index" in error_str:
+                status["opensearch"]["index_exists"] = False
+                status["opensearch"]["note"] = "Index will be created on first audit event"
+            else:
+                status["opensearch"]["error"] = str(e)
 
     return status
 

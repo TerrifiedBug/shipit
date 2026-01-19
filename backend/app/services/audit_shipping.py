@@ -60,36 +60,55 @@ def _parse_headers() -> dict[str, str]:
     return headers
 
 
-def _ensure_audit_index() -> None:
-    """Ensure the audit log index exists with proper mappings."""
-    client = _get_opensearch_client()
+# Track if we've already ensured the index exists this session
+_audit_index_ensured = False
 
-    if not client.indices.exists(index=AUDIT_INDEX_NAME):
-        mapping = {
-            "mappings": {
-                "properties": {
-                    "id": {"type": "keyword"},
-                    "event_type": {"type": "keyword"},
-                    "actor_id": {"type": "keyword"},
-                    "actor_name": {"type": "keyword"},
-                    "target_type": {"type": "keyword"},
-                    "target_id": {"type": "keyword"},
-                    "details": {"type": "object", "enabled": True},
-                    "ip_address": {"type": "ip"},
-                    "created_at": {"type": "date"},
-                    "@timestamp": {"type": "date"},
-                }
-            },
-            "settings": {
-                "number_of_shards": 1,
-                "number_of_replicas": 0,
-            },
-        }
-        try:
-            client.indices.create(index=AUDIT_INDEX_NAME, body=mapping)
-            logger.info(f"Created audit log index: {AUDIT_INDEX_NAME}")
-        except Exception as e:
-            logger.warning(f"Failed to create audit index (may already exist): {e}")
+
+def _ensure_audit_index() -> None:
+    """Ensure the audit log index exists with proper mappings.
+
+    Uses a try-create approach instead of exists-check to avoid needing
+    the indices:admin/exists permission.
+    """
+    global _audit_index_ensured
+
+    # Only try once per session to avoid repeated create attempts
+    if _audit_index_ensured:
+        return
+
+    client = _get_opensearch_client()
+    mapping = {
+        "mappings": {
+            "properties": {
+                "id": {"type": "keyword"},
+                "event_type": {"type": "keyword"},
+                "actor_id": {"type": "keyword"},
+                "actor_name": {"type": "keyword"},
+                "target_type": {"type": "keyword"},
+                "target_id": {"type": "keyword"},
+                "details": {"type": "object", "enabled": True},
+                "ip_address": {"type": "ip"},
+                "created_at": {"type": "date"},
+                "@timestamp": {"type": "date"},
+            }
+        },
+        "settings": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0,
+        },
+    }
+    try:
+        client.indices.create(index=AUDIT_INDEX_NAME, body=mapping)
+        logger.info(f"Created audit log index: {AUDIT_INDEX_NAME}")
+        _audit_index_ensured = True
+    except Exception as e:
+        error_str = str(e).lower()
+        # Index already exists is fine - mark as ensured
+        if "resource_already_exists" in error_str or "already exists" in error_str:
+            logger.debug(f"Audit log index already exists: {AUDIT_INDEX_NAME}")
+            _audit_index_ensured = True
+        else:
+            logger.warning(f"Failed to create audit index: {e}")
 
 
 def ship_to_opensearch(audit_log: dict) -> None:

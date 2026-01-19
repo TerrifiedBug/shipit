@@ -55,10 +55,13 @@ class TestAuditShipping:
     @patch("app.services.audit_shipping._get_opensearch_client")
     def test_ensure_audit_index_creates_index(self, mock_get_client):
         """Test that the audit index is created if it doesn't exist."""
+        import app.services.audit_shipping as audit_shipping
         from app.services.audit_shipping import _ensure_audit_index, AUDIT_INDEX_NAME
 
+        # Reset the ensured flag for this test
+        audit_shipping._audit_index_ensured = False
+
         mock_client = MagicMock()
-        mock_client.indices.exists.return_value = False
         mock_get_client.return_value = mock_client
 
         _ensure_audit_index()
