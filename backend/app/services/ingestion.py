@@ -270,10 +270,11 @@ def apply_field_mappings(
                 # Set @timestamp with parsed UTC value
                 result["@timestamp"] = parsed
 
-                # Also update the original field if it's in the result
+                # Remove the source timestamp field to avoid redundancy
+                # (it's now represented by @timestamp)
                 mapped_name = field_mappings.get(timestamp_field, timestamp_field)
                 if mapped_name in result:
-                    result[mapped_name] = parsed
+                    del result[mapped_name]
 
     # Apply type coercion (uses original field names as keys)
     if field_types:

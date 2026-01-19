@@ -385,6 +385,67 @@ class TestFieldTransforms:
         assert records[0]["name"] == "ALICE"
 
 
+class TestTimestampFieldRemoval:
+    """Tests for removing source timestamp field after mapping to @timestamp."""
+
+    @patch("app.services.ingestion.bulk_index")
+    def test_timestamp_field_removed_after_mapping(self, mock_bulk_index, temp_dir):
+        """Source timestamp field should be removed when mapped to @timestamp."""
+        import json
+
+        # Create test file with timestamp field
+        file_path = temp_dir / "test.json"
+        file_path.write_text(json.dumps([{"event_time": "2024-01-15T10:30:00Z", "message": "test"}]))
+
+        mock_bulk_index.return_value = {"success": 1, "failed": []}
+
+        result = ingest_file(
+            file_path=file_path,
+            file_format="json_array",
+            index_name="test-index",
+            timestamp_field="event_time",
+            field_mappings={},
+        )
+
+        # Get the document that was indexed
+        call_args = mock_bulk_index.call_args
+        records = call_args[0][1]  # Second positional arg is records
+        doc = records[0]
+
+        assert "@timestamp" in doc
+        assert "event_time" not in doc, "Source timestamp field should be removed"
+        assert doc["message"] == "test"
+
+    @patch("app.services.ingestion.bulk_index")
+    def test_timestamp_field_removed_with_mapping(self, mock_bulk_index, temp_dir):
+        """Source timestamp field should be removed even when it has a field mapping."""
+        import json
+
+        # Create test file with timestamp field
+        file_path = temp_dir / "test.json"
+        file_path.write_text(json.dumps([{"event_time": "2024-01-15T10:30:00Z", "message": "test"}]))
+
+        mock_bulk_index.return_value = {"success": 1, "failed": []}
+
+        result = ingest_file(
+            file_path=file_path,
+            file_format="json_array",
+            index_name="test-index",
+            timestamp_field="event_time",
+            field_mappings={"event_time": "event.timestamp"},
+        )
+
+        # Get the document that was indexed
+        call_args = mock_bulk_index.call_args
+        records = call_args[0][1]
+        doc = records[0]
+
+        assert "@timestamp" in doc
+        assert "event_time" not in doc, "Source timestamp field should be removed"
+        assert "event.timestamp" not in doc, "Mapped timestamp field should also be removed"
+        assert doc["message"] == "test"
+
+
 class TestGeoIPIntegration:
     """Tests for GeoIP integration in ingestion pipeline."""
 
