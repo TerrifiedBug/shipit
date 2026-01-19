@@ -446,6 +446,22 @@ export interface EcsSuggestResponse {
   geoip_available: boolean;
 }
 
+export interface EcsField {
+  type: string;
+  description: string;
+}
+
+export async function getEcsFields(): Promise<Record<string, EcsField>> {
+  const response = await fetch(`${API_BASE}/api/upload/ecs-fields`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch ECS fields');
+  }
+  const data = await response.json();
+  return data.fields;
+}
+
 export async function suggestEcs(uploadId: string): Promise<EcsSuggestResponse> {
   const response = await fetch(`${API_BASE}/api/upload/${uploadId}/suggest-ecs`, {
     method: 'POST',

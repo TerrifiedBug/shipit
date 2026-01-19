@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   cancelIngest,
+  EcsField,
   FieldInfo,
   FieldTransform,
+  getEcsFields,
   IngestResponse,
   ProgressEvent,
   startIngest,
@@ -175,6 +177,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   const [geoipFields, setGeoipFields] = useState<string[]>([]);
   const [geoipAvailable, setGeoipAvailable] = useState(false);
   const [ecsSuggestions, setEcsSuggestions] = useState<Record<string, string>>({});
+  const [allEcsFields, setAllEcsFields] = useState<Record<string, EcsField>>({});
 
   const setFieldType = (fieldName: string, type: string) => {
     setFieldTypes(prev => ({ ...prev, [fieldName]: type }));
@@ -216,6 +219,19 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
         });
     }
   }, [data.upload_id]);
+
+  // Fetch all ECS fields for dropdown
+  useEffect(() => {
+    getEcsFields().then(setAllEcsFields).catch(console.error);
+  }, []);
+
+  const ecsFieldOptions = useMemo(() =>
+    Object.entries(allEcsFields).map(([name, info]) => ({
+      value: name,
+      label: `${name} (${info.type})`,
+    })),
+    [allEcsFields]
+  );
 
   // Track if form has been modified
   const isDirty = useMemo(() => {
@@ -626,9 +642,17 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                         type="text"
                         value={field.mappedName}
                         onChange={(e) => handleFieldNameChange(index, e.target.value)}
+                        list={`ecs-fields-${index}`}
                         disabled={field.excluded || isIngesting}
                         className="block w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 dark:disabled:bg-gray-600"
                       />
+                      <datalist id={`ecs-fields-${index}`}>
+                        {ecsFieldOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </datalist>
                     </td>
                     <td className="px-4 py-2">
                       <div className="space-y-1">

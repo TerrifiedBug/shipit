@@ -22,7 +22,7 @@ from app.services import database as db
 from app.services.ingestion import count_records, ingest_file
 from app.services.opensearch import validate_index_name, validate_index_for_ingestion
 from app.services.parser import detect_format, infer_fields, parse_preview, validate_field_count, parse_with_pattern, validate_format, FormatValidationError
-from app.services.ecs import suggest_ecs_mappings
+from app.services.ecs import suggest_ecs_mappings, get_all_ecs_fields
 from app.services.geoip import is_geoip_available
 from app.services.rate_limit import check_upload_rate_limit
 
@@ -407,6 +407,12 @@ async def suggest_ecs_fields(upload_id: str):
         "suggestions": suggestions,
         "geoip_available": is_geoip_available(),
     }
+
+
+@router.get("/upload/ecs-fields")
+async def list_ecs_fields(user: dict = Depends(require_auth)):
+    """List all available ECS fields for manual selection."""
+    return {"fields": get_all_ecs_fields()}
 
 
 @router.post("/upload/{upload_id}/reparse")
