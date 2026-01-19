@@ -111,6 +111,26 @@ def _ensure_audit_index() -> None:
             logger.warning(f"Failed to create audit index: {e}")
 
 
+def _to_iso8601(date_str: str | None) -> str:
+    """Convert SQLite datetime string to ISO8601 format for OpenSearch.
+
+    SQLite format: '2026-01-19 16:18:44'
+    ISO8601 format: '2026-01-19T16:18:44Z'
+    """
+    if not date_str:
+        return datetime.utcnow().isoformat() + "Z"
+
+    # If already in ISO format (has T), return as-is
+    if "T" in date_str:
+        return date_str if date_str.endswith("Z") else date_str + "Z"
+
+    # Convert SQLite format to ISO8601
+    try:
+        return date_str.replace(" ", "T") + "Z"
+    except Exception:
+        return datetime.utcnow().isoformat() + "Z"
+
+
 def ship_to_opensearch(audit_log: dict) -> None:
     """Ship audit log to OpenSearch synchronously."""
     if not settings.audit_log_to_opensearch:
@@ -120,10 +140,14 @@ def ship_to_opensearch(audit_log: dict) -> None:
         _ensure_audit_index()
         client = _get_opensearch_client()
 
-        # Add @timestamp for OpenSearch compatibility
+        # Convert dates to ISO8601 format for OpenSearch
+        created_at_iso = _to_iso8601(audit_log.get("created_at"))
+
+        # Build document with proper date formats
         doc = {
             **audit_log,
-            "@timestamp": audit_log.get("created_at", datetime.utcnow().isoformat()),
+            "created_at": created_at_iso,
+            "@timestamp": created_at_iso,
         }
 
         client.index(

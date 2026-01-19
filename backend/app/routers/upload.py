@@ -639,26 +639,39 @@ async def validate_ingest(
 
     warnings = []
     conflicts = []
+    idx_exists = False
 
-    # Check if index exists
-    idx_exists = index_exists(full_index_name)
+    # Check if index exists and get mapping for conflict check
+    # These operations may fail due to permissions - handle gracefully
+    try:
+        idx_exists = index_exists(full_index_name)
 
-    if idx_exists:
-        # Get existing mapping
-        existing_mapping = get_index_mapping(full_index_name)
-        if existing_mapping:
-            # Check for conflicts
-            conflicts = check_mapping_conflicts(existing_mapping, final_field_types)
+        if idx_exists:
+            # Get existing mapping
+            existing_mapping = get_index_mapping(full_index_name)
+            if existing_mapping:
+                # Check for conflicts
+                conflicts = check_mapping_conflicts(existing_mapping, final_field_types)
 
-            if conflicts:
-                for c in conflicts:
-                    warnings.append(
-                        f"Field '{c['field']}' type conflict: existing={c['existing_type']}, new={c['new_type']}"
-                    )
+                if conflicts:
+                    for c in conflicts:
+                        warnings.append(
+                            f"Field '{c['field']}' type conflict: existing={c['existing_type']}, new={c['new_type']}"
+                        )
+            else:
+                warnings.append("Could not retrieve existing index mapping for conflict check")
         else:
-            warnings.append("Could not retrieve existing index mapping for conflict check")
-    else:
-        warnings.append(f"Index '{full_index_name}' does not exist and will be created")
+            warnings.append(f"Index '{full_index_name}' does not exist and will be created")
+    except Exception as e:
+        # Permission error or connection issue - still return validation result
+        error_msg = str(e).lower()
+        if "403" in error_msg or "authorization" in error_msg or "forbidden" in error_msg:
+            warnings.append(
+                "Could not check existing index (permission denied). "
+                "Ensure OpenSearch user has indices:admin/get permission."
+            )
+        else:
+            warnings.append(f"Could not check existing index: {e}")
 
     # Validate index can be written to (strict mode check)
     try:
@@ -672,6 +685,16 @@ async def validate_ingest(
             mapping_preview=mapping_preview,
             field_count=len(final_field_types),
         )
+    except Exception as e:
+        # Permission or other error - add warning but don't fail validation
+        error_msg = str(e).lower()
+        if "403" in error_msg or "authorization" in error_msg or "forbidden" in error_msg:
+            warnings.append(
+                "Could not validate index permissions. "
+                "Ensure OpenSearch user has required permissions."
+            )
+        else:
+            warnings.append(f"Index validation warning: {e}")
 
     return ValidationResult(
         valid=len(conflicts) == 0,
