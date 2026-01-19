@@ -13,6 +13,7 @@ import {
   UploadResponse,
 } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { EcsFieldDropdown } from './EcsFieldDropdown';
 
 // Available transforms that can be applied to fields
 const AVAILABLE_TRANSFORMS = [
@@ -228,7 +229,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   const ecsFieldOptions = useMemo(() =>
     Object.entries(allEcsFields).map(([name, info]) => ({
       value: name,
-      label: `${name} (${info.type})`,
+      type: info.type,
     })),
     [allEcsFields]
   );
@@ -638,21 +639,13 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                       </select>
                     </td>
                     <td className="px-4 py-2">
-                      <input
-                        type="text"
+                      <EcsFieldDropdown
                         value={field.mappedName}
-                        onChange={(e) => handleFieldNameChange(index, e.target.value)}
-                        list={`ecs-fields-${index}`}
+                        options={ecsFieldOptions}
+                        onChange={(value) => handleFieldNameChange(index, value)}
                         disabled={field.excluded || isIngesting}
-                        className="block w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 dark:disabled:bg-gray-600"
+                        placeholder="Type or select ECS field..."
                       />
-                      <datalist id={`ecs-fields-${index}`}>
-                        {ecsFieldOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </datalist>
                     </td>
                     <td className="px-4 py-2">
                       <div className="space-y-1">
