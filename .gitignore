@@ -7,7 +7,9 @@ docs/internal_docs/
 .env
 
 # Data directory (uploads, database, failures)
-data/
+/data/
+# But allow app data directory for bundled schemas
+!backend/app/data/
 
 # Python
 __pycache__/

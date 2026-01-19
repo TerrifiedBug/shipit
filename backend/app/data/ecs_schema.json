@@ -1,0 +1,866 @@
+{
+  "@timestamp": {
+    "type": "date",
+    "description": "Date/time when the event originated."
+  },
+  "message": {
+    "type": "text",
+    "description": "Log message optimized for viewing in a log viewer."
+  },
+  "tags": {
+    "type": "keyword",
+    "description": "List of keywords used to tag each event."
+  },
+  "labels": {
+    "type": "object",
+    "description": "Custom key/value pairs."
+  },
+  "agent.id": {
+    "type": "keyword",
+    "description": "Unique identifier of this agent."
+  },
+  "agent.name": {
+    "type": "keyword",
+    "description": "Custom name of the agent."
+  },
+  "agent.type": {
+    "type": "keyword",
+    "description": "Type of the agent."
+  },
+  "agent.version": {
+    "type": "keyword",
+    "description": "Version of the agent."
+  },
+  "agent.ephemeral_id": {
+    "type": "keyword",
+    "description": "Ephemeral identifier of this agent."
+  },
+  "client.address": {
+    "type": "keyword",
+    "description": "Client network address."
+  },
+  "client.ip": {
+    "type": "ip",
+    "description": "IP address of the client."
+  },
+  "client.port": {
+    "type": "long",
+    "description": "Port of the client."
+  },
+  "client.domain": {
+    "type": "keyword",
+    "description": "Client domain."
+  },
+  "client.mac": {
+    "type": "keyword",
+    "description": "MAC address of the client."
+  },
+  "client.bytes": {
+    "type": "long",
+    "description": "Bytes sent from the client to the server."
+  },
+  "client.packets": {
+    "type": "long",
+    "description": "Packets sent from the client to the server."
+  },
+  "client.user.name": {
+    "type": "keyword",
+    "description": "Short name or login of the user."
+  },
+  "client.user.id": {
+    "type": "keyword",
+    "description": "Unique identifier of the user."
+  },
+  "client.geo.city_name": {
+    "type": "keyword",
+    "description": "City name."
+  },
+  "client.geo.country_name": {
+    "type": "keyword",
+    "description": "Country name."
+  },
+  "client.geo.country_iso_code": {
+    "type": "keyword",
+    "description": "Country ISO code."
+  },
+  "client.geo.location": {
+    "type": "geo_point",
+    "description": "Longitude and latitude."
+  },
+  "destination.address": {
+    "type": "keyword",
+    "description": "Destination network address."
+  },
+  "destination.ip": {
+    "type": "ip",
+    "description": "IP address of the destination."
+  },
+  "destination.port": {
+    "type": "long",
+    "description": "Port of the destination."
+  },
+  "destination.domain": {
+    "type": "keyword",
+    "description": "Destination domain."
+  },
+  "destination.mac": {
+    "type": "keyword",
+    "description": "MAC address of the destination."
+  },
+  "destination.bytes": {
+    "type": "long",
+    "description": "Bytes sent from the destination to the source."
+  },
+  "destination.packets": {
+    "type": "long",
+    "description": "Packets sent from the destination to the source."
+  },
+  "destination.user.name": {
+    "type": "keyword",
+    "description": "Short name or login of the user."
+  },
+  "destination.user.id": {
+    "type": "keyword",
+    "description": "Unique identifier of the user."
+  },
+  "destination.geo.city_name": {
+    "type": "keyword",
+    "description": "City name."
+  },
+  "destination.geo.country_name": {
+    "type": "keyword",
+    "description": "Country name."
+  },
+  "destination.geo.country_iso_code": {
+    "type": "keyword",
+    "description": "Country ISO code."
+  },
+  "destination.geo.location": {
+    "type": "geo_point",
+    "description": "Longitude and latitude."
+  },
+  "event.action": {
+    "type": "keyword",
+    "description": "The action captured by the event."
+  },
+  "event.category": {
+    "type": "keyword",
+    "description": "Event category representing the type of the event."
+  },
+  "event.code": {
+    "type": "keyword",
+    "description": "Identification code for this event."
+  },
+  "event.created": {
+    "type": "date",
+    "description": "Time when the event was first read or created."
+  },
+  "event.dataset": {
+    "type": "keyword",
+    "description": "Name of the dataset."
+  },
+  "event.duration": {
+    "type": "long",
+    "description": "Duration of the event in nanoseconds."
+  },
+  "event.end": {
+    "type": "date",
+    "description": "Event end time."
+  },
+  "event.id": {
+    "type": "keyword",
+    "description": "Unique ID to describe the event."
+  },
+  "event.kind": {
+    "type": "keyword",
+    "description": "The kind of the event."
+  },
+  "event.module": {
+    "type": "keyword",
+    "description": "Name of the module this data is coming from."
+  },
+  "event.original": {
+    "type": "keyword",
+    "description": "Raw text message of entire event."
+  },
+  "event.outcome": {
+    "type": "keyword",
+    "description": "The outcome of the event."
+  },
+  "event.provider": {
+    "type": "keyword",
+    "description": "Source of the event."
+  },
+  "event.reason": {
+    "type": "keyword",
+    "description": "Reason why this event happened."
+  },
+  "event.risk_score": {
+    "type": "long",
+    "description": "Risk score or priority of the event."
+  },
+  "event.severity": {
+    "type": "long",
+    "description": "Severity of the event on a scale."
+  },
+  "event.start": {
+    "type": "date",
+    "description": "Event start time."
+  },
+  "event.timezone": {
+    "type": "keyword",
+    "description": "Timezone the event originated in."
+  },
+  "event.type": {
+    "type": "keyword",
+    "description": "Event type representing what happened."
+  },
+  "file.accessed": {
+    "type": "date",
+    "description": "Last time the file was accessed."
+  },
+  "file.created": {
+    "type": "date",
+    "description": "File creation time."
+  },
+  "file.ctime": {
+    "type": "date",
+    "description": "Last time the file attributes or metadata changed."
+  },
+  "file.directory": {
+    "type": "keyword",
+    "description": "Directory where the file is located."
+  },
+  "file.extension": {
+    "type": "keyword",
+    "description": "File extension."
+  },
+  "file.gid": {
+    "type": "keyword",
+    "description": "Primary group ID (GID) of the file."
+  },
+  "file.group": {
+    "type": "keyword",
+    "description": "Primary group name of the file."
+  },
+  "file.inode": {
+    "type": "keyword",
+    "description": "Inode representing the file in the filesystem."
+  },
+  "file.mime_type": {
+    "type": "keyword",
+    "description": "MIME type of the file."
+  },
+  "file.mode": {
+    "type": "keyword",
+    "description": "Mode of the file in octal representation."
+  },
+  "file.mtime": {
+    "type": "date",
+    "description": "Last time the file content was modified."
+  },
+  "file.name": {
+    "type": "keyword",
+    "description": "Name of the file including the extension."
+  },
+  "file.owner": {
+    "type": "keyword",
+    "description": "File owner's username."
+  },
+  "file.path": {
+    "type": "keyword",
+    "description": "Full path to the file."
+  },
+  "file.size": {
+    "type": "long",
+    "description": "File size in bytes."
+  },
+  "file.type": {
+    "type": "keyword",
+    "description": "File type (file, dir, symlink)."
+  },
+  "file.uid": {
+    "type": "keyword",
+    "description": "The user ID (UID) or security identifier (SID) of the file owner."
+  },
+  "file.hash.md5": {
+    "type": "keyword",
+    "description": "MD5 hash."
+  },
+  "file.hash.sha1": {
+    "type": "keyword",
+    "description": "SHA1 hash."
+  },
+  "file.hash.sha256": {
+    "type": "keyword",
+    "description": "SHA256 hash."
+  },
+  "file.hash.sha512": {
+    "type": "keyword",
+    "description": "SHA512 hash."
+  },
+  "host.architecture": {
+    "type": "keyword",
+    "description": "Operating system architecture."
+  },
+  "host.domain": {
+    "type": "keyword",
+    "description": "Name of the domain of which the host is a member."
+  },
+  "host.hostname": {
+    "type": "keyword",
+    "description": "Hostname of the host."
+  },
+  "host.id": {
+    "type": "keyword",
+    "description": "Unique host id."
+  },
+  "host.ip": {
+    "type": "ip",
+    "description": "Host IP addresses."
+  },
+  "host.mac": {
+    "type": "keyword",
+    "description": "Host MAC addresses."
+  },
+  "host.name": {
+    "type": "keyword",
+    "description": "Name of the host."
+  },
+  "host.type": {
+    "type": "keyword",
+    "description": "Type of host."
+  },
+  "host.uptime": {
+    "type": "long",
+    "description": "Seconds the host has been up."
+  },
+  "host.os.family": {
+    "type": "keyword",
+    "description": "OS family (such as redhat, debian, windows)."
+  },
+  "host.os.full": {
+    "type": "keyword",
+    "description": "Operating system name, including the version or code name."
+  },
+  "host.os.kernel": {
+    "type": "keyword",
+    "description": "Operating system kernel version as a raw string."
+  },
+  "host.os.name": {
+    "type": "keyword",
+    "description": "Operating system name, without the version."
+  },
+  "host.os.platform": {
+    "type": "keyword",
+    "description": "Operating system platform."
+  },
+  "host.os.type": {
+    "type": "keyword",
+    "description": "Use the os.type field to categorize the operating system."
+  },
+  "host.os.version": {
+    "type": "keyword",
+    "description": "Operating system version as a raw string."
+  },
+  "http.request.body.bytes": {
+    "type": "long",
+    "description": "Size in bytes of the request body."
+  },
+  "http.request.body.content": {
+    "type": "keyword",
+    "description": "The full HTTP request body."
+  },
+  "http.request.bytes": {
+    "type": "long",
+    "description": "Total size in bytes of the request (body and headers)."
+  },
+  "http.request.method": {
+    "type": "keyword",
+    "description": "HTTP request method."
+  },
+  "http.request.mime_type": {
+    "type": "keyword",
+    "description": "Mime type of the body of the request."
+  },
+  "http.request.referrer": {
+    "type": "keyword",
+    "description": "Referrer for this HTTP request."
+  },
+  "http.response.body.bytes": {
+    "type": "long",
+    "description": "Size in bytes of the response body."
+  },
+  "http.response.body.content": {
+    "type": "keyword",
+    "description": "The full HTTP response body."
+  },
+  "http.response.bytes": {
+    "type": "long",
+    "description": "Total size in bytes of the response (body and headers)."
+  },
+  "http.response.mime_type": {
+    "type": "keyword",
+    "description": "Mime type of the body of the response."
+  },
+  "http.response.status_code": {
+    "type": "long",
+    "description": "HTTP response status code."
+  },
+  "http.version": {
+    "type": "keyword",
+    "description": "HTTP version."
+  },
+  "log.file.path": {
+    "type": "keyword",
+    "description": "Full path to the log file this event came from."
+  },
+  "log.level": {
+    "type": "keyword",
+    "description": "Log level of the log event."
+  },
+  "log.logger": {
+    "type": "keyword",
+    "description": "The name of the logger."
+  },
+  "log.origin.file.line": {
+    "type": "long",
+    "description": "The line number of the file containing the source code."
+  },
+  "log.origin.file.name": {
+    "type": "keyword",
+    "description": "The name of the file containing the source code."
+  },
+  "log.origin.function": {
+    "type": "keyword",
+    "description": "The name of the function or method."
+  },
+  "log.syslog.facility.code": {
+    "type": "long",
+    "description": "Syslog numeric facility of the event."
+  },
+  "log.syslog.facility.name": {
+    "type": "keyword",
+    "description": "Syslog text-based facility of the event."
+  },
+  "log.syslog.priority": {
+    "type": "long",
+    "description": "Syslog priority of the event."
+  },
+  "log.syslog.severity.code": {
+    "type": "long",
+    "description": "Syslog numeric severity of the event."
+  },
+  "log.syslog.severity.name": {
+    "type": "keyword",
+    "description": "Syslog text-based severity of the event."
+  },
+  "network.application": {
+    "type": "keyword",
+    "description": "Application level protocol name."
+  },
+  "network.bytes": {
+    "type": "long",
+    "description": "Total bytes transferred in both directions."
+  },
+  "network.community_id": {
+    "type": "keyword",
+    "description": "A hash of source and destination IPs and ports."
+  },
+  "network.direction": {
+    "type": "keyword",
+    "description": "Direction of the network traffic."
+  },
+  "network.forwarded_ip": {
+    "type": "ip",
+    "description": "Host IP address when the source IP is the proxy."
+  },
+  "network.iana_number": {
+    "type": "keyword",
+    "description": "IANA Protocol Number."
+  },
+  "network.name": {
+    "type": "keyword",
+    "description": "Name given by operators to sections of their network."
+  },
+  "network.packets": {
+    "type": "long",
+    "description": "Total packets transferred in both directions."
+  },
+  "network.protocol": {
+    "type": "keyword",
+    "description": "Application protocol name."
+  },
+  "network.transport": {
+    "type": "keyword",
+    "description": "Protocol name from the OSI transport layer."
+  },
+  "network.type": {
+    "type": "keyword",
+    "description": "Protocol name from the OSI network layer."
+  },
+  "process.args": {
+    "type": "keyword",
+    "description": "Array of process arguments."
+  },
+  "process.args_count": {
+    "type": "long",
+    "description": "Length of the process.args array."
+  },
+  "process.command_line": {
+    "type": "keyword",
+    "description": "Full command line that started the process."
+  },
+  "process.executable": {
+    "type": "keyword",
+    "description": "Absolute path to the process executable."
+  },
+  "process.exit_code": {
+    "type": "long",
+    "description": "The exit code of the process."
+  },
+  "process.name": {
+    "type": "keyword",
+    "description": "Process name."
+  },
+  "process.pgid": {
+    "type": "long",
+    "description": "Identifier of the group of processes the process belongs to."
+  },
+  "process.pid": {
+    "type": "long",
+    "description": "Process id."
+  },
+  "process.ppid": {
+    "type": "long",
+    "description": "Parent process' pid."
+  },
+  "process.start": {
+    "type": "date",
+    "description": "The time the process started."
+  },
+  "process.thread.id": {
+    "type": "long",
+    "description": "Thread ID."
+  },
+  "process.thread.name": {
+    "type": "keyword",
+    "description": "Thread name."
+  },
+  "process.title": {
+    "type": "keyword",
+    "description": "Process title."
+  },
+  "process.uptime": {
+    "type": "long",
+    "description": "Seconds the process has been up."
+  },
+  "process.working_directory": {
+    "type": "keyword",
+    "description": "The working directory of the process."
+  },
+  "process.parent.args": {
+    "type": "keyword",
+    "description": "Array of process arguments for the parent process."
+  },
+  "process.parent.command_line": {
+    "type": "keyword",
+    "description": "Full command line that started the parent process."
+  },
+  "process.parent.executable": {
+    "type": "keyword",
+    "description": "Absolute path to the parent process executable."
+  },
+  "process.parent.name": {
+    "type": "keyword",
+    "description": "Parent process name."
+  },
+  "process.parent.pid": {
+    "type": "long",
+    "description": "Parent process id."
+  },
+  "process.parent.ppid": {
+    "type": "long",
+    "description": "Parent process' parent pid."
+  },
+  "process.parent.start": {
+    "type": "date",
+    "description": "The time the parent process started."
+  },
+  "process.parent.title": {
+    "type": "keyword",
+    "description": "Parent process title."
+  },
+  "server.address": {
+    "type": "keyword",
+    "description": "Server network address."
+  },
+  "server.ip": {
+    "type": "ip",
+    "description": "IP address of the server."
+  },
+  "server.port": {
+    "type": "long",
+    "description": "Port of the server."
+  },
+  "server.domain": {
+    "type": "keyword",
+    "description": "Server domain."
+  },
+  "server.mac": {
+    "type": "keyword",
+    "description": "MAC address of the server."
+  },
+  "server.bytes": {
+    "type": "long",
+    "description": "Bytes sent from the server to the client."
+  },
+  "server.packets": {
+    "type": "long",
+    "description": "Packets sent from the server to the client."
+  },
+  "server.user.name": {
+    "type": "keyword",
+    "description": "Short name or login of the user."
+  },
+  "server.user.id": {
+    "type": "keyword",
+    "description": "Unique identifier of the user."
+  },
+  "server.geo.city_name": {
+    "type": "keyword",
+    "description": "City name."
+  },
+  "server.geo.country_name": {
+    "type": "keyword",
+    "description": "Country name."
+  },
+  "server.geo.country_iso_code": {
+    "type": "keyword",
+    "description": "Country ISO code."
+  },
+  "server.geo.location": {
+    "type": "geo_point",
+    "description": "Longitude and latitude."
+  },
+  "source.address": {
+    "type": "keyword",
+    "description": "Source network address."
+  },
+  "source.ip": {
+    "type": "ip",
+    "description": "IP address of the source."
+  },
+  "source.port": {
+    "type": "long",
+    "description": "Port of the source."
+  },
+  "source.domain": {
+    "type": "keyword",
+    "description": "Source domain."
+  },
+  "source.mac": {
+    "type": "keyword",
+    "description": "MAC address of the source."
+  },
+  "source.bytes": {
+    "type": "long",
+    "description": "Bytes sent from the source to the destination."
+  },
+  "source.packets": {
+    "type": "long",
+    "description": "Packets sent from the source to the destination."
+  },
+  "source.user.name": {
+    "type": "keyword",
+    "description": "Short name or login of the user."
+  },
+  "source.user.id": {
+    "type": "keyword",
+    "description": "Unique identifier of the user."
+  },
+  "source.geo.city_name": {
+    "type": "keyword",
+    "description": "City name."
+  },
+  "source.geo.continent_code": {
+    "type": "keyword",
+    "description": "Two-letter code representing continent."
+  },
+  "source.geo.continent_name": {
+    "type": "keyword",
+    "description": "Name of the continent."
+  },
+  "source.geo.country_iso_code": {
+    "type": "keyword",
+    "description": "Country ISO code."
+  },
+  "source.geo.country_name": {
+    "type": "keyword",
+    "description": "Country name."
+  },
+  "source.geo.location": {
+    "type": "geo_point",
+    "description": "Longitude and latitude."
+  },
+  "source.geo.name": {
+    "type": "keyword",
+    "description": "User-defined description of a location."
+  },
+  "source.geo.postal_code": {
+    "type": "keyword",
+    "description": "Postal code associated with the location."
+  },
+  "source.geo.region_iso_code": {
+    "type": "keyword",
+    "description": "Region ISO code."
+  },
+  "source.geo.region_name": {
+    "type": "keyword",
+    "description": "Region name."
+  },
+  "source.geo.timezone": {
+    "type": "keyword",
+    "description": "The time zone of the location."
+  },
+  "url.domain": {
+    "type": "keyword",
+    "description": "Domain of the URL."
+  },
+  "url.extension": {
+    "type": "keyword",
+    "description": "The file extension from the original request URL."
+  },
+  "url.fragment": {
+    "type": "keyword",
+    "description": "Portion of the URL after the #."
+  },
+  "url.full": {
+    "type": "keyword",
+    "description": "Full unparsed URL."
+  },
+  "url.original": {
+    "type": "keyword",
+    "description": "Unmodified original URL as seen in the event source."
+  },
+  "url.password": {
+    "type": "keyword",
+    "description": "Password of the request."
+  },
+  "url.path": {
+    "type": "keyword",
+    "description": "Path of the request."
+  },
+  "url.port": {
+    "type": "long",
+    "description": "Port of the request."
+  },
+  "url.query": {
+    "type": "keyword",
+    "description": "The query field describes the query string."
+  },
+  "url.registered_domain": {
+    "type": "keyword",
+    "description": "The highest registered URL domain."
+  },
+  "url.scheme": {
+    "type": "keyword",
+    "description": "Scheme of the URL."
+  },
+  "url.subdomain": {
+    "type": "keyword",
+    "description": "The subdomain portion of a fully qualified domain name."
+  },
+  "url.top_level_domain": {
+    "type": "keyword",
+    "description": "The top level domain."
+  },
+  "url.username": {
+    "type": "keyword",
+    "description": "Username of the request."
+  },
+  "user.domain": {
+    "type": "keyword",
+    "description": "Name of the directory the user is a member of."
+  },
+  "user.email": {
+    "type": "keyword",
+    "description": "User email address."
+  },
+  "user.full_name": {
+    "type": "keyword",
+    "description": "User's full name."
+  },
+  "user.group.domain": {
+    "type": "keyword",
+    "description": "Name of the directory the group is a member of."
+  },
+  "user.group.id": {
+    "type": "keyword",
+    "description": "Unique identifier for the group."
+  },
+  "user.group.name": {
+    "type": "keyword",
+    "description": "Name of the group."
+  },
+  "user.hash": {
+    "type": "keyword",
+    "description": "Unique user hash to correlate information for a user."
+  },
+  "user.id": {
+    "type": "keyword",
+    "description": "Unique identifier of the user."
+  },
+  "user.name": {
+    "type": "keyword",
+    "description": "Short name or login of the user."
+  },
+  "user.roles": {
+    "type": "keyword",
+    "description": "Array of user roles at the time of the event."
+  },
+  "user_agent.device.name": {
+    "type": "keyword",
+    "description": "Name of the device."
+  },
+  "user_agent.name": {
+    "type": "keyword",
+    "description": "Name of the user agent."
+  },
+  "user_agent.original": {
+    "type": "keyword",
+    "description": "Unparsed user_agent string."
+  },
+  "user_agent.os.family": {
+    "type": "keyword",
+    "description": "OS family (such as redhat, debian, windows)."
+  },
+  "user_agent.os.full": {
+    "type": "keyword",
+    "description": "Operating system name, including the version or code name."
+  },
+  "user_agent.os.kernel": {
+    "type": "keyword",
+    "description": "Operating system kernel version as a raw string."
+  },
+  "user_agent.os.name": {
+    "type": "keyword",
+    "description": "Operating system name, without the version."
+  },
+  "user_agent.os.platform": {
+    "type": "keyword",
+    "description": "Operating system platform."
+  },
+  "user_agent.os.type": {
+    "type": "keyword",
+    "description": "Use the os.type field to categorize the operating system."
+  },
+  "user_agent.os.version": {
+    "type": "keyword",
+    "description": "Operating system version as a raw string."
+  },
+  "user_agent.version": {
+    "type": "keyword",
+    "description": "Version of the user agent."
+  }
+}
