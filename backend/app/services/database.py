@@ -286,6 +286,7 @@ def init_db() -> None:
         _init_patterns_table(conn)
         _init_grok_patterns_table(conn)
         _init_chunked_uploads_table(conn)
+        _init_custom_ecs_mappings_table(conn)
 
 
 @contextmanager
@@ -1432,3 +1433,81 @@ def cleanup_expired_chunked_uploads() -> int:
             "DELETE FROM chunked_uploads WHERE expires_at < datetime('now')"
         )
         return cursor.rowcount
+
+
+# Custom ECS mappings functions
+
+
+def _init_custom_ecs_mappings_table(conn: sqlite3.Connection) -> None:
+    """Create custom_ecs_mappings table for admin-defined field mappings."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS custom_ecs_mappings (
+            id TEXT PRIMARY KEY,
+            source_pattern TEXT NOT NULL UNIQUE,
+            ecs_field TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+
+
+def create_custom_ecs_mapping(source_pattern: str, ecs_field: str, created_by: str) -> dict:
+    """Create a new custom ECS mapping.
+
+    Args:
+        source_pattern: The source field pattern to match (case-insensitive)
+        ecs_field: The ECS field to map to
+        created_by: User ID of the creator
+
+    Returns:
+        The created mapping record
+
+    Raises:
+        ValueError: If a mapping for this source_pattern already exists
+    """
+    from datetime import datetime, timezone
+
+    mapping_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO custom_ecs_mappings (id, source_pattern, ecs_field, created_by, created_at) VALUES (?, ?, ?, ?, ?)",
+                (mapping_id, source_pattern.lower(), ecs_field, created_by, now),
+            )
+        except sqlite3.IntegrityError:
+            raise ValueError(f"Mapping for '{source_pattern}' already exists")
+    return {
+        "id": mapping_id,
+        "source_pattern": source_pattern.lower(),
+        "ecs_field": ecs_field,
+        "created_by": created_by,
+        "created_at": now,
+    }
+
+
+def list_custom_ecs_mappings() -> list[dict]:
+    """List all custom ECS mappings.
+
+    Returns:
+        List of mapping records ordered by creation date (newest first)
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, source_pattern, ecs_field, created_by, created_at FROM custom_ecs_mappings ORDER BY created_at DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def delete_custom_ecs_mapping(mapping_id: str) -> bool:
+    """Delete a custom ECS mapping.
+
+    Args:
+        mapping_id: The ID of the mapping to delete
+
+    Returns:
+        True if the mapping was deleted, False if not found
+    """
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM custom_ecs_mappings WHERE id = ?", (mapping_id,))
+    return cursor.rowcount > 0

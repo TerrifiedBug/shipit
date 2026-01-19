@@ -945,3 +945,54 @@ export async function expandGrokPattern(pattern: string): Promise<GrokExpandResp
   }
   return response.json();
 }
+
+// Custom ECS mappings (admin only)
+export interface CustomEcsMapping {
+  id: string;
+  source_pattern: string;
+  ecs_field: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface CustomEcsMappingCreate {
+  source_pattern: string;
+  ecs_field: string;
+}
+
+export async function listCustomEcsMappings(): Promise<CustomEcsMapping[]> {
+  const response = await fetch(`${API_BASE}/api/settings/ecs-mappings`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to list custom ECS mappings');
+  }
+  const data = await response.json();
+  return data.mappings;
+}
+
+export async function createCustomEcsMapping(data: CustomEcsMappingCreate): Promise<CustomEcsMapping> {
+  const response = await fetch(`${API_BASE}/api/settings/ecs-mappings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to create custom ECS mapping');
+  }
+  return response.json();
+}
+
+export async function deleteCustomEcsMapping(mappingId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/settings/ecs-mappings/${mappingId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete custom ECS mapping');
+  }
+}

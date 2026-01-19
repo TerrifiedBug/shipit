@@ -11,6 +11,7 @@ import { Audit } from './components/Audit';
 import { PatternLibrary } from './components/PatternLibrary';
 import { PasswordChangeModal } from './components/PasswordChangeModal';
 import { OpenSearchStatus } from './components/OpenSearchStatus';
+import { CustomEcsMappings } from './components/CustomEcsMappings';
 import { IngestResponse, UploadResponse, deletePendingUpload } from './api/client';
 import { useTheme } from './contexts/ThemeContext';
 import { useAuth } from './contexts/AuthContext';
@@ -156,6 +157,7 @@ function App() {
   const [showUsers, setShowUsers] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
   const [showPatterns, setShowPatterns] = useState(false);
+  const [showCustomEcsMappings, setShowCustomEcsMappings] = useState(false);
 
   // Track pending upload for cleanup on tab close
   const pendingUploadRef = useRef<string | null>(null);
@@ -270,6 +272,12 @@ function App() {
                   >
                     Users
                   </button>
+                  <button
+                    onClick={() => setShowCustomEcsMappings(true)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+                  >
+                    ECS Mappings
+                  </button>
                 </>
               ) : null}
               <button
@@ -301,6 +309,7 @@ function App() {
       {showUsers && <Users onClose={() => setShowUsers(false)} />}
       {showAudit && <Audit onClose={() => setShowAudit(false)} />}
       {showPatterns && <PatternLibrary onClose={() => setShowPatterns(false)} />}
+      {showCustomEcsMappings && <CustomEcsMappings onClose={() => setShowCustomEcsMappings(false)} />}
       <main>
         <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
           {state === 'upload' && (

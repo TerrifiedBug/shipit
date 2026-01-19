@@ -176,23 +176,35 @@ def get_ecs_field_type(ecs_field: str) -> str | None:
 def suggest_ecs_mappings(field_names: list[str]) -> dict[str, str]:
     """Suggest ECS field mappings for a list of field names.
 
+    Uses both built-in safe mappings and custom admin-defined mappings.
+    Custom mappings take precedence over built-in ones.
+
     Only suggests mappings for unambiguous field names. Ambiguous fields
-    like 'remote_ip', 'server_ip', 'host' are intentionally not mapped.
+    like 'remote_ip', 'server_ip', 'host' are intentionally not mapped
+    in built-in mappings (though admins can add custom mappings for these).
 
     Args:
         field_names: List of field names from the uploaded data
 
     Returns:
         Dict mapping original field names to suggested ECS field names.
-        Only includes fields that have a known unambiguous mapping.
+        Only includes fields that have a known mapping (built-in or custom).
     """
+    from app.services import database as db
+
     suggestions = {}
+
+    # Load custom mappings (these take precedence over built-in)
+    custom_mappings = {m["source_pattern"]: m["ecs_field"] for m in db.list_custom_ecs_mappings()}
+
+    # Combine: custom takes precedence over built-in
+    all_mappings = {**SAFE_ECS_MAPPINGS, **custom_mappings}
 
     for field in field_names:
         # Try exact match first (case-insensitive)
         field_lower = field.lower()
-        if field_lower in SAFE_ECS_MAPPINGS:
-            suggestions[field] = SAFE_ECS_MAPPINGS[field_lower]
+        if field_lower in all_mappings:
+            suggestions[field] = all_mappings[field_lower]
 
     return suggestions
 
