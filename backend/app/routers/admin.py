@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 
+from app.config import settings
 from app.routers.auth import require_auth
 from app.services import audit, database as db
 from app.services.auth import hash_password
@@ -350,3 +351,78 @@ def activate_user(user_id: str, http_request: Request = None, admin: dict = Depe
         created_at=updated["created_at"],
         last_login=updated["last_login"],
     )
+
+
+@router.get("/audit-shipping/status")
+def get_audit_shipping_status(admin: dict = Depends(require_admin)):
+    """Get audit log shipping configuration status (admin only).
+
+    Returns the current configuration for audit log shipping to help
+    diagnose connectivity or configuration issues.
+    """
+    from app.services.audit_shipping import AUDIT_INDEX_NAME, is_shipping_enabled
+
+    status = {
+        "enabled": is_shipping_enabled(),
+        "opensearch": {
+            "enabled": settings.audit_log_to_opensearch,
+            "index_name": AUDIT_INDEX_NAME,
+        },
+        "http_endpoint": {
+            "enabled": bool(settings.audit_log_endpoint),
+            "url": settings.audit_log_endpoint[:50] + "..." if settings.audit_log_endpoint and len(settings.audit_log_endpoint) > 50 else settings.audit_log_endpoint,
+            "has_token": bool(settings.audit_log_endpoint_token),
+            "has_headers": bool(settings.audit_log_endpoint_headers),
+        },
+    }
+
+    # If OpenSearch shipping is enabled, try to check index existence
+    if settings.audit_log_to_opensearch:
+        try:
+            from app.services.audit_shipping import _get_opensearch_client
+
+            client = _get_opensearch_client()
+            index_exists = client.indices.exists(index=AUDIT_INDEX_NAME)
+            status["opensearch"]["index_exists"] = index_exists
+
+            if index_exists:
+                # Get document count
+                count_result = client.count(index=AUDIT_INDEX_NAME)
+                status["opensearch"]["document_count"] = count_result.get("count", 0)
+        except Exception as e:
+            status["opensearch"]["error"] = str(e)
+
+    return status
+
+
+@router.post("/audit-shipping/test")
+def test_audit_shipping(http_request: Request, admin: dict = Depends(require_admin)):
+    """Send a test audit log to verify shipping is working (admin only).
+
+    Creates a test audit event and ships it to configured destinations.
+    Returns the result of the shipping attempt.
+    """
+    from app.services.audit_shipping import is_shipping_enabled
+
+    if not is_shipping_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail="No audit log shipping destinations configured. Set AUDIT_LOG_TO_OPENSEARCH=true or configure AUDIT_LOG_ENDPOINT.",
+        )
+
+    # Create a test audit log entry
+    test_log = db.create_audit_log(
+        event_type="audit_shipping_test",
+        actor_id=admin["id"],
+        actor_name=admin.get("email", ""),
+        target_type="system",
+        target_id="audit-shipping",
+        details={"test": True, "message": "Audit shipping test triggered by admin"},
+        ip_address=get_client_ip(http_request),
+    )
+
+    return {
+        "success": True,
+        "message": "Test audit log created and shipped",
+        "audit_log_id": test_log.get("id"),
+    }
