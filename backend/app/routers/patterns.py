@@ -7,7 +7,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.routers.auth import require_auth
+from app.routers.auth import require_auth, require_user_or_admin
 from app.services import database
 from app.services.grok_patterns import (
     list_builtin_patterns,
@@ -136,9 +136,9 @@ async def list_patterns(
 @router.post("", status_code=201)
 async def create_pattern(
     data: PatternCreate,
-    user: dict = Depends(require_auth),
+    user: dict = Depends(require_user_or_admin),
 ) -> PatternResponse:
-    """Create a new custom pattern."""
+    """Create a new custom pattern. Requires user or admin role."""
     # Validate the pattern
     if data.type == "grok":
         is_valid, error = validate_grok_pattern(data.pattern)
@@ -246,9 +246,9 @@ async def list_grok_patterns(
 @router.post("/grok", status_code=201)
 async def create_grok_pattern(
     data: GrokPatternCreate,
-    user: dict = Depends(require_auth),
+    user: dict = Depends(require_user_or_admin),
 ) -> GrokPatternResponse:
-    """Create a new custom grok pattern component."""
+    """Create a new custom grok pattern component. Requires user or admin role."""
     # Check if name conflicts with built-in
     builtins = {p["name"] for p in list_builtin_patterns()}
     if data.name in builtins:
@@ -286,9 +286,9 @@ async def create_grok_pattern(
 @router.post("/grok/import", response_model=GrokImportResult)
 async def import_grok_patterns(
     request: GrokImportRequest,
-    user: dict = Depends(require_auth),
+    user: dict = Depends(require_user_or_admin),
 ) -> GrokImportResult:
-    """Import multiple grok patterns from file content.
+    """Import multiple grok patterns from file content. Requires user or admin role.
 
     Parses grok pattern file format (PATTERN_NAME<whitespace>pattern_expression).
     Lines starting with # are comments, blank lines are skipped.
@@ -368,9 +368,9 @@ async def get_grok_pattern(
 async def update_grok_pattern(
     pattern_id: str,
     data: GrokPatternUpdate,
-    user: dict = Depends(require_auth),
+    user: dict = Depends(require_user_or_admin),
 ) -> GrokPatternResponse:
-    """Update a custom grok pattern component."""
+    """Update a custom grok pattern component. Requires user or admin role."""
     existing = database.get_grok_pattern(pattern_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Grok pattern not found")
@@ -396,9 +396,9 @@ async def update_grok_pattern(
 @router.delete("/grok/{pattern_id}", status_code=204)
 async def delete_grok_pattern(
     pattern_id: str,
-    user: dict = Depends(require_auth),
+    user: dict = Depends(require_user_or_admin),
 ) -> None:
-    """Delete a custom grok pattern component."""
+    """Delete a custom grok pattern component. Requires user or admin role."""
     existing = database.get_grok_pattern(pattern_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Grok pattern not found")
@@ -428,9 +428,9 @@ async def get_pattern(
 async def update_pattern(
     pattern_id: str,
     data: PatternUpdate,
-    user: dict = Depends(require_auth),
+    user: dict = Depends(require_user_or_admin),
 ) -> PatternResponse:
-    """Update a custom pattern."""
+    """Update a custom pattern. Requires user or admin role."""
     existing = database.get_pattern(pattern_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Pattern not found")
@@ -466,9 +466,9 @@ async def update_pattern(
 @router.delete("/{pattern_id}", status_code=204)
 async def delete_pattern(
     pattern_id: str,
-    user: dict = Depends(require_auth),
+    user: dict = Depends(require_user_or_admin),
 ) -> None:
-    """Delete a custom pattern."""
+    """Delete a custom pattern. Requires user or admin role."""
     existing = database.get_pattern(pattern_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Pattern not found")

@@ -248,6 +248,12 @@ async def upload_files(
     )
 
 
+@router.get("/upload/ecs-fields")
+async def list_ecs_fields(user: dict = Depends(require_auth)):
+    """List all available ECS fields for manual selection."""
+    return {"fields": get_all_ecs_fields()}
+
+
 @router.get("/upload/{upload_id}", response_model=UploadResponse)
 async def get_upload(
     upload_id: str,
@@ -416,12 +422,6 @@ async def suggest_ecs_fields(upload_id: str):
         "suggestions": suggestions,
         "geoip_available": is_geoip_available(),
     }
-
-
-@router.get("/upload/ecs-fields")
-async def list_ecs_fields(user: dict = Depends(require_auth)):
-    """List all available ECS fields for manual selection."""
-    return {"fields": get_all_ecs_fields()}
 
 
 @router.post("/upload/{upload_id}/reparse")

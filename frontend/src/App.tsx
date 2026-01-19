@@ -286,12 +286,14 @@ function App() {
               >
                 Patterns
               </button>
-              <button
-                onClick={() => setShowApiKeys(true)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
-              >
-                API Keys
-              </button>
+              {user?.role !== 'viewer' && (
+                <button
+                  onClick={() => setShowApiKeys(true)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+                >
+                  API Keys
+                </button>
+              )}
               <button
                 onClick={() => setShowHistory(true)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"

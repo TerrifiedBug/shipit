@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { deleteIndex, downloadFailures, getFailuresDownloadUrl, getAppSettings, getHistory, UploadRecord } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 
 interface HistoryProps {
   onClose: () => void;
@@ -41,6 +42,7 @@ function StatusBadge({ status }: { status: UploadRecord['status'] }) {
 }
 
 export function History({ onClose }: HistoryProps) {
+  const { user } = useAuth();
   const [uploads, setUploads] = useState<UploadRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +53,8 @@ export function History({ onClose }: HistoryProps) {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [retentionDays, setRetentionDays] = useState<number>(0);
+
+  const canDelete = user?.role !== 'viewer';
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
@@ -297,7 +301,7 @@ export function History({ onClose }: HistoryProps) {
                               </svg>
                             </button>
                           )}
-                          {upload.status === 'completed' && upload.index_name && !upload.index_deleted && upload.index_exists !== false && (
+                          {canDelete && upload.status === 'completed' && upload.index_name && !upload.index_deleted && upload.index_exists !== false && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
