@@ -303,8 +303,34 @@ async def import_grok_patterns(
 
     imported = 0
     skipped = 0
+    errors = list(parse_errors)  # Copy parse errors to mutable list
+
+    # Get built-in patterns for override check
+    builtins = {p["name"] for p in list_builtin_patterns()}
+
+    # Name format validation regex (same as GrokPatternCreate model)
+    name_pattern = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
     for name, regex in patterns:
+        # Validate name format: uppercase, starts with letter, max 50 chars
+        if len(name) > 50:
+            errors.append(f"Pattern '{name}': name exceeds 50 characters")
+            continue
+        if not name_pattern.match(name):
+            errors.append(f"Pattern '{name}': invalid name format (must be uppercase, start with letter, contain only A-Z, 0-9, _)")
+            continue
+
+        # Check if name conflicts with built-in pattern
+        if name in builtins:
+            errors.append(f"Pattern '{name}': cannot override built-in pattern")
+            continue
+
+        # Validate the regex
+        is_valid, error = validate_regex_pattern(regex)
+        if not is_valid:
+            errors.append(f"Pattern '{name}': invalid regex - {error}")
+            continue
+
         # Check if pattern exists
         existing = database.get_grok_pattern_by_name(name)
 
@@ -321,7 +347,7 @@ async def import_grok_patterns(
     return GrokImportResult(
         imported=imported,
         skipped=skipped,
-        errors=parse_errors
+        errors=errors
     )
 
 
