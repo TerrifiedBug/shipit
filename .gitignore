@@ -8,6 +8,7 @@ docs/internal_docs/
 
 # Data directory (uploads, database, failures)
 /data/
+backend/data/
 # But allow app data directory for bundled schemas
 !backend/app/data/
 
