@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     audit_log_endpoint_token: str | None = None  # Bearer token for HTTP endpoint
     audit_log_endpoint_headers: str | None = None  # Additional headers (format: Header1:value1,Header2:value2)
 
+    # OpenAI configuration for AI-assisted ECS mappings
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+
     class Config:
         env_file = ".env"
 

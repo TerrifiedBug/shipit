@@ -33,6 +33,7 @@ from app.services.parser import detect_format, infer_fields, parse_preview, vali
 from app.services.ecs import suggest_ecs_mappings, get_all_ecs_fields
 from app.services.geoip import is_geoip_available
 from app.services.rate_limit import check_upload_rate_limit
+from app.services.ai_mappings import is_ai_enabled, suggest_mappings_with_ai, infer_type_hint
 
 router = APIRouter()
 
@@ -430,6 +431,48 @@ async def suggest_ecs_fields(upload_id: str):
         "suggestions": suggestions,
         "geoip_available": is_geoip_available(),
     }
+
+
+@router.get("/upload/ai-enabled")
+async def check_ai_enabled():
+    """Check if AI-assisted mappings are enabled."""
+    return {"enabled": is_ai_enabled()}
+
+
+@router.post("/upload/{upload_id}/suggest-ecs-ai")
+async def suggest_ecs_mappings_ai(
+    upload_id: str,
+    user: dict = Depends(require_auth),
+):
+    """Get AI-suggested ECS mappings for unmapped fields.
+
+    Requires authentication. Uses OpenAI to analyze field names and suggest
+    appropriate ECS mappings. Only available when OPENAI_API_KEY is configured.
+    """
+    if not is_ai_enabled():
+        raise HTTPException(status_code=400, detail="AI mappings not configured")
+
+    safe_id = _validate_upload_id(upload_id)
+    cache = _upload_cache.get(safe_id)
+    if not cache:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    # Get current field names and sample values
+    records = cache.get("records", [])
+    if not records:
+        return {"suggestions": {}}
+
+    # Build field info with type hints
+    fields = []
+    for field in cache.get("fields", []):
+        field_name = field["name"]
+        sample_values = [r.get(field_name) for r in records[:5] if r.get(field_name) is not None]
+        type_hint = infer_type_hint(sample_values)
+        fields.append({"name": field_name, "type_hint": type_hint})
+
+    suggestions = await suggest_mappings_with_ai(fields)
+
+    return {"suggestions": suggestions}
 
 
 @router.post("/upload/{upload_id}/reparse")

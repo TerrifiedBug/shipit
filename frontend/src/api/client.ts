@@ -522,6 +522,35 @@ export async function suggestEcs(uploadId: string): Promise<EcsSuggestResponse> 
   return response.json();
 }
 
+// AI-assisted ECS mapping functions
+export async function checkAiEnabled(): Promise<boolean> {
+  const response = await fetch(`${API_BASE}/api/upload/ai-enabled`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    return false;
+  }
+  const data = await response.json();
+  return data.enabled || false;
+}
+
+export interface AiSuggestResponse {
+  suggestions: Record<string, string>;
+  unmapped_count: number;
+}
+
+export async function suggestEcsMappingsAi(uploadId: string): Promise<AiSuggestResponse> {
+  const response = await fetch(`${API_BASE}/api/upload/${uploadId}/suggest-ecs-ai`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get AI ECS suggestions');
+  }
+  return response.json();
+}
+
 // Admin user management types and functions
 export interface AdminUser {
   id: string;

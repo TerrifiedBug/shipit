@@ -51,7 +51,7 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
     try {
       const apiKeys = await listApiKeys();
       setKeys(apiKeys);
-    } catch (err) {
+    } catch (_err) {
       addToast('Failed to load API keys', 'error');
     } finally {
       setLoading(false);
@@ -70,7 +70,7 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
       setAllowedIps('');
       setShowCreateForm(false);
       addToast('API key created successfully', 'success');
-    } catch (err) {
+    } catch (_err) {
       addToast('Failed to create API key', 'error');
     } finally {
       setCreating(false);
@@ -85,7 +85,7 @@ export function ApiKeys({ onClose }: ApiKeysProps) {
       setKeys(keys.filter((k) => k.id !== keyToDelete.id));
       setKeyToDelete(null);
       addToast('API key deleted', 'success');
-    } catch (err) {
+    } catch (_err) {
       addToast('Failed to delete API key', 'error');
     }
   };
