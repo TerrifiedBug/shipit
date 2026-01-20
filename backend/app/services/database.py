@@ -835,6 +835,12 @@ AUDIT_EVENT_INGESTION_STARTED = "ingestion_started"
 AUDIT_EVENT_INGESTION_COMPLETED = "ingestion_completed"
 AUDIT_EVENT_TEMPLATE_CREATED = "template_created"
 AUDIT_EVENT_TEMPLATE_DELETED = "template_deleted"
+AUDIT_EVENT_TEMPLATE_UPDATED = "template_updated"
+AUDIT_EVENT_ECS_MAPPING_CREATED = "ecs_mapping_created"
+AUDIT_EVENT_ECS_MAPPING_DELETED = "ecs_mapping_deleted"
+AUDIT_EVENT_PATTERN_CREATED = "pattern_created"
+AUDIT_EVENT_PATTERN_UPDATED = "pattern_updated"
+AUDIT_EVENT_PATTERN_DELETED = "pattern_deleted"
 
 
 def create_audit_log(
@@ -1530,6 +1536,23 @@ def list_custom_ecs_mappings() -> list[dict]:
             "SELECT id, source_pattern, ecs_field, created_by, created_at FROM custom_ecs_mappings ORDER BY created_at DESC"
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_custom_ecs_mapping(mapping_id: str) -> dict | None:
+    """Get a custom ECS mapping by ID.
+
+    Args:
+        mapping_id: The ID of the mapping to retrieve
+
+    Returns:
+        The mapping record, or None if not found
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT id, source_pattern, ecs_field, created_by, created_at FROM custom_ecs_mappings WHERE id = ?",
+            (mapping_id,),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def delete_custom_ecs_mapping(mapping_id: str) -> bool:

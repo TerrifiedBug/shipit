@@ -251,3 +251,120 @@ def log_template_deleted(
         details={"name": template_name},
         ip_address=ip_address,
     )
+
+
+def log_template_updated(
+    actor_id: str,
+    actor_name: str,
+    template_id: str,
+    template_name: str,
+    changes: dict,
+    ip_address: str | None = None,
+) -> None:
+    """Log index template update."""
+    db.create_audit_log(
+        event_type=db.AUDIT_EVENT_TEMPLATE_UPDATED,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        target_type="template",
+        target_id=template_id,
+        details={"name": template_name, "changes": changes},
+        ip_address=ip_address,
+    )
+
+
+def log_ecs_mapping_created(
+    actor_id: str,
+    actor_name: str,
+    mapping_id: str,
+    source_pattern: str,
+    ecs_field: str,
+    ip_address: str | None = None,
+) -> None:
+    """Log custom ECS mapping creation."""
+    db.create_audit_log(
+        event_type=db.AUDIT_EVENT_ECS_MAPPING_CREATED,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        target_type="ecs_mapping",
+        target_id=mapping_id,
+        details={"source_pattern": source_pattern, "ecs_field": ecs_field},
+        ip_address=ip_address,
+    )
+
+
+def log_ecs_mapping_deleted(
+    actor_id: str,
+    actor_name: str,
+    mapping_id: str,
+    source_pattern: str,
+    ecs_field: str,
+    ip_address: str | None = None,
+) -> None:
+    """Log custom ECS mapping deletion."""
+    db.create_audit_log(
+        event_type=db.AUDIT_EVENT_ECS_MAPPING_DELETED,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        target_type="ecs_mapping",
+        target_id=mapping_id,
+        details={"source_pattern": source_pattern, "ecs_field": ecs_field},
+        ip_address=ip_address,
+    )
+
+
+def log_pattern_created(
+    actor_id: str,
+    actor_name: str,
+    pattern_id: str,
+    pattern_name: str,
+    ip_address: str | None = None,
+) -> None:
+    """Log grok pattern creation."""
+    db.create_audit_log(
+        event_type=db.AUDIT_EVENT_PATTERN_CREATED,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        target_type="pattern",
+        target_id=pattern_id,
+        details={"name": pattern_name},
+        ip_address=ip_address,
+    )
+
+
+def log_pattern_updated(
+    actor_id: str,
+    actor_name: str,
+    pattern_id: str,
+    pattern_name: str,
+    ip_address: str | None = None,
+) -> None:
+    """Log grok pattern update."""
+    db.create_audit_log(
+        event_type=db.AUDIT_EVENT_PATTERN_UPDATED,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        target_type="pattern",
+        target_id=pattern_id,
+        details={"name": pattern_name},
+        ip_address=ip_address,
+    )
+
+
+def log_pattern_deleted(
+    actor_id: str,
+    actor_name: str,
+    pattern_id: str,
+    pattern_name: str,
+    ip_address: str | None = None,
+) -> None:
+    """Log grok pattern deletion."""
+    db.create_audit_log(
+        event_type=db.AUDIT_EVENT_PATTERN_DELETED,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        target_type="pattern",
+        target_id=pattern_id,
+        details={"name": pattern_name},
+        ip_address=ip_address,
+    )

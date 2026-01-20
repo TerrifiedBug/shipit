@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.routers.auth import require_auth, require_user_or_admin
+from app.routers.auth import require_auth, require_user_or_admin, get_client_ip
 from app.services import database
+from app.services import audit
 from app.services.grok_patterns import (
     list_builtin_patterns,
     validate_grok_pattern,
@@ -136,6 +137,7 @@ async def list_patterns(
 @router.post("", status_code=201)
 async def create_pattern(
     data: PatternCreate,
+    request: Request,
     user: dict = Depends(require_user_or_admin),
 ) -> PatternResponse:
     """Create a new custom pattern. Requires user or admin role."""
@@ -159,6 +161,15 @@ async def create_pattern(
 
     if not pattern:
         raise HTTPException(status_code=500, detail="Failed to create pattern")
+
+    # Audit log
+    audit.log_pattern_created(
+        actor_id=user["id"],
+        actor_name=user.get("email", user.get("name", "unknown")),
+        pattern_id=pattern["id"],
+        pattern_name=data.name,
+        ip_address=get_client_ip(request),
+    )
 
     return PatternResponse(**pattern)
 
@@ -428,6 +439,7 @@ async def get_pattern(
 async def update_pattern(
     pattern_id: str,
     data: PatternUpdate,
+    request: Request,
     user: dict = Depends(require_user_or_admin),
 ) -> PatternResponse:
     """Update a custom pattern. Requires user or admin role."""
@@ -460,12 +472,22 @@ async def update_pattern(
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update pattern")
 
+    # Audit log
+    audit.log_pattern_updated(
+        actor_id=user["id"],
+        actor_name=user.get("email", user.get("name", "unknown")),
+        pattern_id=pattern_id,
+        pattern_name=updated["name"],
+        ip_address=get_client_ip(request),
+    )
+
     return PatternResponse(**updated)
 
 
 @router.delete("/{pattern_id}", status_code=204)
 async def delete_pattern(
     pattern_id: str,
+    request: Request,
     user: dict = Depends(require_user_or_admin),
 ) -> None:
     """Delete a custom pattern. Requires user or admin role."""
@@ -474,3 +496,12 @@ async def delete_pattern(
         raise HTTPException(status_code=404, detail="Pattern not found")
 
     database.delete_pattern(pattern_id)
+
+    # Audit log
+    audit.log_pattern_deleted(
+        actor_id=user["id"],
+        actor_name=user.get("email", user.get("name", "unknown")),
+        pattern_id=pattern_id,
+        pattern_name=existing["name"],
+        ip_address=get_client_ip(request),
+    )
