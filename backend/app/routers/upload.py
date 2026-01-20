@@ -457,16 +457,16 @@ async def suggest_ecs_mappings_ai(
     if not cache:
         raise HTTPException(status_code=404, detail="Upload not found")
 
-    # Get current field names and sample values
-    records = cache.get("records", [])
-    if not records:
-        raise HTTPException(status_code=400, detail="No records available for AI analysis")
+    # Get current field names and sample values from preview
+    preview = cache.get("preview", [])
+    if not preview:
+        raise HTTPException(status_code=400, detail="No preview data available for AI analysis")
 
     # Build field info with type hints
     fields = []
     for field in cache.get("fields", []):
         field_name = field["name"]
-        sample_values = [r.get(field_name) for r in records[:5] if r.get(field_name) is not None]
+        sample_values = [r.get(field_name) for r in preview[:5] if r.get(field_name) is not None]
         type_hint = infer_type_hint(sample_values)
         fields.append({"name": field_name, "type_hint": type_hint})
 
