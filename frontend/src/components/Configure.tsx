@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   cancelIngest,
   createTemplate,
@@ -200,6 +200,19 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   // Settings state
   const [indexPrefix, setIndexPrefix] = useState('shipit-');
   const [existingIndices, setExistingIndices] = useState<string[]>([]);
+  const [showIndexDropdown, setShowIndexDropdown] = useState(false);
+  const indexDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close index dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (indexDropdownRef.current && !indexDropdownRef.current.contains(event.target as Node)) {
+        setShowIndexDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const setFieldType = (fieldName: string, type: string) => {
     setFieldTypes(prev => ({ ...prev, [fieldName]: type }));
@@ -686,36 +699,67 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
 
         <div className="space-y-4">
           {/* Index Name */}
-          <div>
+          <div ref={indexDropdownRef}>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
               Index Name
             </label>
-            <div className="flex">
+            <div className="flex relative">
               <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-sm">
                 {indexPrefix}
               </span>
-              <input
-                type="text"
-                value={indexName}
-                onChange={(e) => setIndexName(e.target.value.toLowerCase())}
-                placeholder="my-index-name"
-                list="existing-indices"
-                className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-indigo-500 focus:border-indigo-500"
-                disabled={isIngesting}
-              />
-              <datalist id="existing-indices">
-                {existingIndices.map((idx) => (
-                  <option key={idx} value={idx.replace(indexPrefix, '')} />
-                ))}
-              </datalist>
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={indexName}
+                  onChange={(e) => setIndexName(e.target.value.toLowerCase())}
+                  onFocus={() => existingIndices.length > 0 && setShowIndexDropdown(true)}
+                  placeholder="Enter new or select existing index"
+                  className="block w-full px-3 py-2 pr-8 rounded-none rounded-r-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-indigo-500 focus:border-indigo-500"
+                  disabled={isIngesting}
+                />
+                {existingIndices.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => !isIngesting && setShowIndexDropdown(!showIndexDropdown)}
+                    disabled={isIngesting}
+                    className="absolute inset-y-0 right-0 flex items-center px-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50"
+                  >
+                    <svg className={`w-4 h-4 transition-transform ${showIndexDropdown ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                )}
+                {showIndexDropdown && existingIndices.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-48 overflow-auto">
+                    <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 sticky top-0">
+                      Existing indices
+                    </div>
+                    {existingIndices
+                      .filter(idx => !indexName || idx.replace(indexPrefix, '').includes(indexName))
+                      .map((idx) => {
+                        const shortName = idx.replace(indexPrefix, '');
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              setIndexName(shortName);
+                              setShowIndexDropdown(false);
+                            }}
+                            className={`w-full px-3 py-2 text-left text-sm hover:bg-indigo-50 dark:hover:bg-indigo-900/30 ${
+                              indexName === shortName ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-900 dark:text-indigo-100' : 'text-gray-900 dark:text-white'
+                            }`}
+                          >
+                            {shortName}
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
             </div>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
               Full index name will be: {indexPrefix}{indexName || '<name>'}
-              {existingIndices.length > 0 && (
-                <span className="ml-2 text-indigo-500">
-                  ({existingIndices.length} existing {existingIndices.length === 1 ? 'index' : 'indices'} available)
-                </span>
-              )}
             </p>
           </div>
 
