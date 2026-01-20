@@ -263,6 +263,12 @@ async def list_ecs_fields(user: dict = Depends(require_auth)):
     return {"fields": get_all_ecs_fields()}
 
 
+@router.get("/upload/ai-enabled")
+async def check_ai_enabled():
+    """Check if AI-assisted mappings are enabled."""
+    return {"enabled": is_ai_enabled()}
+
+
 @router.get("/upload/{upload_id}", response_model=UploadResponse)
 async def get_upload(
     upload_id: str,
@@ -431,12 +437,6 @@ async def suggest_ecs_fields(upload_id: str):
         "suggestions": suggestions,
         "geoip_available": is_geoip_available(),
     }
-
-
-@router.get("/upload/ai-enabled")
-async def check_ai_enabled():
-    """Check if AI-assisted mappings are enabled."""
-    return {"enabled": is_ai_enabled()}
 
 
 @router.post("/upload/{upload_id}/suggest-ecs-ai")

@@ -913,7 +913,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
               disabled={Object.keys(ecsSuggestions).length === 0 || isIngesting}
               className="px-3 py-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-600 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Apply ECS Mapping ({Object.keys(ecsSuggestions).length})
+              {aiEnabled ? 'Auto ECS' : `Apply ECS Mapping (${Object.keys(ecsSuggestions).length})`}
             </button>
           </div>
         </div>
