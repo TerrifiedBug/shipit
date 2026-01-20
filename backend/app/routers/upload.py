@@ -33,7 +33,7 @@ from app.services.parser import detect_format, infer_fields, parse_preview, vali
 from app.services.ecs import suggest_ecs_mappings, get_all_ecs_fields
 from app.services.geoip import is_geoip_available
 from app.services.rate_limit import check_upload_rate_limit
-from app.services.ai_mappings import is_ai_enabled, suggest_mappings_with_ai, infer_type_hint
+from app.services.ai_mappings import is_ai_enabled, suggest_mappings_with_ai, infer_type_hint, AiMappingError
 
 router = APIRouter()
 
@@ -450,7 +450,7 @@ async def suggest_ecs_mappings_ai(
     appropriate ECS mappings. Only available when OPENAI_API_KEY is configured.
     """
     if not is_ai_enabled():
-        raise HTTPException(status_code=400, detail="AI mappings not configured")
+        raise HTTPException(status_code=400, detail="AI mappings not configured - set OPENAI_API_KEY")
 
     safe_id = _validate_upload_id(upload_id)
     cache = _upload_cache.get(safe_id)
@@ -460,7 +460,7 @@ async def suggest_ecs_mappings_ai(
     # Get current field names and sample values
     records = cache.get("records", [])
     if not records:
-        return {"suggestions": {}}
+        raise HTTPException(status_code=400, detail="No records available for AI analysis")
 
     # Build field info with type hints
     fields = []
@@ -470,9 +470,14 @@ async def suggest_ecs_mappings_ai(
         type_hint = infer_type_hint(sample_values)
         fields.append({"name": field_name, "type_hint": type_hint})
 
-    suggestions = await suggest_mappings_with_ai(fields)
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields available for AI analysis")
 
-    return {"suggestions": suggestions}
+    try:
+        suggestions = await suggest_mappings_with_ai(fields)
+        return {"suggestions": suggestions}
+    except AiMappingError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/upload/{upload_id}/reparse")

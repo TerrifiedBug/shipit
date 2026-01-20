@@ -86,6 +86,11 @@ def _looks_like_uuid(value: str) -> bool:
     )
 
 
+class AiMappingError(Exception):
+    """Raised when AI mapping fails."""
+    pass
+
+
 async def suggest_mappings_with_ai(fields: list[dict[str, str]]) -> dict[str, str]:
     """Get AI-suggested ECS mappings for fields.
 
@@ -94,8 +99,14 @@ async def suggest_mappings_with_ai(fields: list[dict[str, str]]) -> dict[str, st
 
     Returns:
         Dict mapping field names to suggested ECS fields
+
+    Raises:
+        AiMappingError: If the AI call fails
     """
     if not is_ai_enabled():
+        raise AiMappingError("AI mappings not configured - set OPENAI_API_KEY")
+
+    if not fields:
         return {}
 
     try:
@@ -105,6 +116,8 @@ async def suggest_mappings_with_ai(fields: list[dict[str, str]]) -> dict[str, st
 
         fields_json = json.dumps(fields, indent=2)
         prompt = PROMPT_TEMPLATE.format(fields_json=fields_json)
+
+        logger.info(f"Requesting AI suggestions for {len(fields)} fields")
 
         response = await client.chat.completions.create(
             model=settings.openai_model,
@@ -139,8 +152,21 @@ async def suggest_mappings_with_ai(fields: list[dict[str, str]]) -> dict[str, st
             else:
                 logger.debug(f"AI suggested invalid ECS field: {ecs_field}")
 
+        logger.info(f"AI suggested {len(validated)} valid ECS mappings")
         return validated
 
+    except openai.AuthenticationError as e:
+        logger.error(f"OpenAI authentication failed: {e}")
+        raise AiMappingError("OpenAI API key is invalid")
+    except openai.RateLimitError as e:
+        logger.error(f"OpenAI rate limit: {e}")
+        raise AiMappingError("OpenAI rate limit exceeded, try again later")
+    except openai.APIError as e:
+        logger.error(f"OpenAI API error: {e}")
+        raise AiMappingError(f"OpenAI API error: {e.message}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse AI response: {e}")
+        raise AiMappingError("Failed to parse AI response")
     except Exception as e:
-        logger.warning(f"AI mapping suggestion failed: {e}")
-        return {}
+        logger.error(f"AI mapping suggestion failed: {e}")
+        raise AiMappingError(f"AI mapping failed: {str(e)}")
