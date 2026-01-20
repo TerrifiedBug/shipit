@@ -9,6 +9,7 @@ import {
   getEcsFields,
   IndexTemplate,
   IngestResponse,
+  listIndices,
   listTemplates,
   ProgressEvent,
   startIngest,
@@ -198,6 +199,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
 
   // Settings state
   const [indexPrefix, setIndexPrefix] = useState('shipit-');
+  const [existingIndices, setExistingIndices] = useState<string[]>([]);
 
   const setFieldType = (fieldName: string, type: string) => {
     setFieldTypes(prev => ({ ...prev, [fieldName]: type }));
@@ -259,6 +261,11 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
         }
       })
       .catch(console.error);
+  }, []);
+
+  // Fetch existing indices on mount
+  useEffect(() => {
+    listIndices().then(setExistingIndices).catch(console.error);
   }, []);
 
   // Apply a template to the current configuration
@@ -692,12 +699,23 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
                 value={indexName}
                 onChange={(e) => setIndexName(e.target.value.toLowerCase())}
                 placeholder="my-index-name"
+                list="existing-indices"
                 className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-indigo-500 focus:border-indigo-500"
                 disabled={isIngesting}
               />
+              <datalist id="existing-indices">
+                {existingIndices.map((idx) => (
+                  <option key={idx} value={idx.replace(indexPrefix, '')} />
+                ))}
+              </datalist>
             </div>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
               Full index name will be: {indexPrefix}{indexName || '<name>'}
+              {existingIndices.length > 0 && (
+                <span className="ml-2 text-indigo-500">
+                  ({existingIndices.length} existing {existingIndices.length === 1 ? 'index' : 'indices'} available)
+                </span>
+              )}
             </p>
           </div>
 

@@ -280,6 +280,22 @@ def _init_chunked_uploads_table(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chunked_expires ON chunked_uploads(expires_at)")
 
 
+def _init_timestamp_history_table(conn: sqlite3.Connection) -> None:
+    """Create timestamp_history table for storing successful timestamp configurations."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS timestamp_history (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            source_field TEXT NOT NULL,
+            format_string TEXT NOT NULL,
+            target_field TEXT DEFAULT '@timestamp',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_timestamp_history_user ON timestamp_history(user_id)")
+
+
 def init_db() -> None:
     """Initialize the database schema."""
     with get_connection() as conn:
@@ -295,6 +311,7 @@ def init_db() -> None:
         _init_chunked_uploads_table(conn)
         _init_custom_ecs_mappings_table(conn)
         _init_index_templates_table(conn)
+        _init_timestamp_history_table(conn)
 
 
 @contextmanager
@@ -1689,3 +1706,85 @@ def delete_index_template(template_id: str) -> bool:
     with get_connection() as conn:
         cursor = conn.execute("DELETE FROM index_templates WHERE id = ?", (template_id,))
     return cursor.rowcount > 0
+
+
+# =============================================================================
+# Timestamp History Functions
+# =============================================================================
+
+
+def add_timestamp_history(
+    user_id: str,
+    source_field: str,
+    format_string: str,
+    target_field: str = "@timestamp",
+) -> dict:
+    """Record a successful timestamp configuration.
+
+    Keeps only the last 5 entries per user to avoid unlimited growth.
+
+    Args:
+        user_id: The user ID
+        source_field: The original field used for timestamp
+        format_string: The format string used for parsing
+        target_field: The target field (default @timestamp)
+
+    Returns:
+        The created history entry
+    """
+    history_id = str(uuid.uuid4())
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO timestamp_history (id, user_id, source_field, format_string, target_field)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (history_id, user_id, source_field, format_string, target_field),
+        )
+
+        # Keep only the last 5 entries per user
+        # Use rowid for reliable ordering when timestamps are identical
+        conn.execute(
+            """
+            DELETE FROM timestamp_history
+            WHERE user_id = ? AND rowid NOT IN (
+                SELECT rowid FROM timestamp_history
+                WHERE user_id = ?
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT 5
+            )
+            """,
+            (user_id, user_id),
+        )
+
+    return {
+        "id": history_id,
+        "source_field": source_field,
+        "format_string": format_string,
+        "target_field": target_field,
+    }
+
+
+def get_timestamp_history(user_id: str) -> list[dict]:
+    """Get user's timestamp configuration history.
+
+    Args:
+        user_id: The user ID
+
+    Returns:
+        List of timestamp history entries, most recent first
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, source_field, format_string, target_field, created_at
+            FROM timestamp_history
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT 5
+            """,
+            (user_id,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]

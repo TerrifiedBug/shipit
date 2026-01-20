@@ -79,6 +79,76 @@ class TestIndexProtection:
                 mock_get_client.assert_not_called()
 
 
+class TestListIndicesEndpoint:
+    """Tests for the list indices endpoint."""
+
+    def _login(self, db):
+        """Helper to setup and login, returns cookies."""
+        client.post("/api/auth/setup", json={
+            "email": "listtest@example.com",
+            "password": "Password123",
+            "name": "List Test User",
+        })
+        response = client.post("/api/auth/login", json={
+            "email": "listtest@example.com",
+            "password": "Password123",
+        })
+        return response.cookies
+
+    def test_list_indices_returns_index_names(self, db):
+        """Test that list_indices returns available index names."""
+        cookies = self._login(db)
+
+        with patch("app.routers.indexes.get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.cat.indices.return_value = [
+                {"index": "shipit-logs-2024"},
+                {"index": "shipit-metrics"},
+                {"index": "shipit-audit"},
+            ]
+            mock_get_client.return_value = mock_client
+
+            response = client.get("/api/indexes/list", cookies=cookies)
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "indices" in data
+            assert isinstance(data["indices"], list)
+            # Should be sorted
+            assert data["indices"] == ["shipit-audit", "shipit-logs-2024", "shipit-metrics"]
+
+    def test_list_indices_requires_auth(self, db):
+        """Test that list endpoint requires authentication."""
+        response = client.get("/api/indexes/list")
+        assert response.status_code == 401
+
+    def test_list_indices_empty_when_no_indices(self, db):
+        """Test that list_indices returns empty list when no indices exist."""
+        cookies = self._login(db)
+
+        with patch("app.routers.indexes.get_client") as mock_get_client:
+            mock_client = MagicMock()
+            mock_client.cat.indices.return_value = []
+            mock_get_client.return_value = mock_client
+
+            response = client.get("/api/indexes/list", cookies=cookies)
+
+            assert response.status_code == 200
+            assert response.json()["indices"] == []
+
+    def test_list_indices_handles_error(self, db):
+        """Test that list_indices returns empty list on error."""
+        cookies = self._login(db)
+
+        with patch("app.routers.indexes.get_client") as mock_get_client:
+            mock_get_client.side_effect = Exception("Connection failed")
+
+            response = client.get("/api/indexes/list", cookies=cookies)
+
+            assert response.status_code == 200
+            assert response.json()["indices"] == []
+
+
 class TestDeleteIndexEndpoint:
     def _login(self, db):
         """Helper to setup and login, returns cookies."""

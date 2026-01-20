@@ -1,13 +1,35 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 
 from app.config import settings
 from app.services import audit
-from app.services.opensearch import delete_index
+from app.services.opensearch import delete_index, get_client
 from app.services.database import mark_index_deleted, untrack_index
 from app.services.request_utils import get_client_ip
-from app.routers.auth import require_user_or_admin
+from app.routers.auth import require_auth, require_user_or_admin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/indexes", tags=["indexes"])
+
+
+@router.get("/list")
+def list_indices(user: dict = Depends(require_auth)):
+    """List available indices for dropdown selection.
+
+    Returns indices that match the configured prefix.
+    """
+    try:
+        client = get_client()
+        prefix = settings.index_prefix
+        # Use cat indices API to get index names
+        response = client.cat.indices(index=f"{prefix}*", format="json")
+        indices = sorted([idx["index"] for idx in response])
+        return {"indices": indices}
+    except Exception as e:
+        logger.warning(f"Failed to list indices: {e}")
+        return {"indices": []}
 
 
 @router.delete("/{index_name}")

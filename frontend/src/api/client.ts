@@ -466,6 +466,17 @@ export async function deleteIndex(indexName: string): Promise<void> {
   }
 }
 
+export async function listIndices(): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/api/indexes/list`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    return [];
+  }
+  const data = await response.json();
+  return data.indices || [];
+}
+
 export async function deletePendingUpload(uploadId: string): Promise<void> {
   const response = await fetch(`${API_BASE}/api/upload/${uploadId}`, {
     method: 'DELETE',

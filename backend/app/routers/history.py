@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.config import settings
-from app.routers.auth import require_viewer_or_above
-from app.services.database import get_upload, list_uploads
+from app.routers.auth import require_auth, require_viewer_or_above
+from app.services.database import get_timestamp_history, get_upload, list_uploads
 from app.services.opensearch import list_indexes
 
 router = APIRouter(tags=["history"])
@@ -85,3 +85,14 @@ async def download_failures(
         media_type="application/json",
         filename=f"{upload['filename']}_failures.json",
     )
+
+
+@router.get("/timestamp-history")
+async def get_timestamp_history_endpoint(user: dict = Depends(require_auth)):
+    """Get user's recent timestamp configurations.
+
+    Returns the last 5 timestamp configurations used by the current user,
+    allowing quick reuse of previously successful format strings.
+    """
+    history = get_timestamp_history(user["id"])
+    return {"history": history}
