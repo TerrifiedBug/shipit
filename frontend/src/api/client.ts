@@ -676,6 +676,7 @@ export async function getAuditEventTypes(): Promise<string[]> {
 // App settings
 export interface AppSettings {
   index_retention_days: number;
+  index_prefix: string;
 }
 
 export async function getAppSettings(): Promise<AppSettings> {
@@ -683,7 +684,7 @@ export async function getAppSettings(): Promise<AppSettings> {
     credentials: 'include',
   });
   if (!response.ok) {
-    return { index_retention_days: 0 };
+    return { index_retention_days: 0, index_prefix: 'shipit-' };
   }
   return response.json();
 }

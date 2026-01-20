@@ -38,4 +38,5 @@ async def get_settings():
     """Get public application settings."""
     return {
         "index_retention_days": settings.index_retention_days,
+        "index_prefix": settings.index_prefix,
     }

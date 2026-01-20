@@ -5,6 +5,7 @@ import {
   EcsField,
   FieldInfo,
   FieldTransform,
+  getAppSettings,
   getEcsFields,
   IndexTemplate,
   IngestResponse,
@@ -45,8 +46,6 @@ interface ConfigureProps {
   onComplete: (result: IngestResponse) => void;
   onReset: () => void;
 }
-
-const INDEX_PREFIX = 'shipit-';
 
 // Keywords that suggest a field is a timestamp (must be whole words or clear suffixes)
 const TIMESTAMP_KEYWORDS = ['time', 'date', 'created', 'updated', 'timestamp', 'datetime', 'createdat', 'updatedat', 'startedat', 'endedat'];
@@ -197,6 +196,9 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   const [templateDescription, setTemplateDescription] = useState('');
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
+  // Settings state
+  const [indexPrefix, setIndexPrefix] = useState('shipit-');
+
   const setFieldType = (fieldName: string, type: string) => {
     setFieldTypes(prev => ({ ...prev, [fieldName]: type }));
   };
@@ -246,6 +248,17 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
   // Fetch templates on mount
   useEffect(() => {
     listTemplates().then(setTemplates).catch(console.error);
+  }, []);
+
+  // Fetch app settings (index prefix) on mount
+  useEffect(() => {
+    getAppSettings()
+      .then((settings) => {
+        if (settings.index_prefix) {
+          setIndexPrefix(settings.index_prefix);
+        }
+      })
+      .catch(console.error);
   }, []);
 
   // Apply a template to the current configuration
@@ -672,7 +685,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
             </label>
             <div className="flex">
               <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-sm">
-                {INDEX_PREFIX}
+                {indexPrefix}
               </span>
               <input
                 type="text"
@@ -684,7 +697,7 @@ export function Configure({ data, onBack, onComplete, onReset }: ConfigureProps)
               />
             </div>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Full index name will be: {INDEX_PREFIX}{indexName || '<name>'}
+              Full index name will be: {indexPrefix}{indexName || '<name>'}
             </p>
           </div>
 
