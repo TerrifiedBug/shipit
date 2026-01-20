@@ -587,6 +587,7 @@ async def oidc_login(response: Response):
             value=state,
             httponly=True,
             samesite="lax",
+            secure=True,  # Require HTTPS
             max_age=600,  # 10 minutes
         )
         return redirect
