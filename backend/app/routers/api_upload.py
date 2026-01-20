@@ -42,7 +42,7 @@ async def api_upload(
 
     Args:
         file: File to upload (JSON array, NDJSON, CSV, TSV, LTSV, or syslog)
-        index_name: Target index name (without prefix - will be prefixed with shipit-)
+        index_name: Target index name (without prefix - will be prefixed with INDEX_PREFIX from config)
         format: Optional format override (json_array, ndjson, csv, tsv, ltsv, syslog).
                 If not specified, format is auto-detected.
         timestamp_field: Optional field to use as @timestamp. Must exist in the data.

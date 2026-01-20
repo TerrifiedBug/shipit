@@ -34,6 +34,7 @@ const AVAILABLE_TRANSFORMS = [
   { name: 'mask_email', label: 'Mask Email', options: [] as string[] },
   { name: 'mask_ip', label: 'Mask IP', options: [] as string[] },
   { name: 'default', label: 'Default Value', options: ['default_value'] },
+  { name: 'set_value', label: 'Set Value (Redact)', options: ['new_value'] },
   { name: 'parse_json', label: 'Parse JSON', options: ['path'] },
   { name: 'parse_kv', label: 'Parse Key=Value', options: ['delimiter', 'separator'] },
 ];

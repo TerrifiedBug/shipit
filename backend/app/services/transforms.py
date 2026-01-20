@@ -28,7 +28,7 @@ def apply_transform(value: Any, transform_name: str, **options) -> Any:
         Transformed value, or original value if transform doesn't apply
     """
     # Special handling for transforms that need to process None values
-    if value is None and transform_name not in ("default", "hash_sha256"):
+    if value is None and transform_name not in ("default", "hash_sha256", "set_value"):
         return None
 
     transform_fn = TRANSFORMS.get(transform_name)
@@ -170,6 +170,11 @@ def _default(value: Any, default_value: str = "", **_) -> Any:
     return value
 
 
+def _set_value(value: Any, new_value: str = "", **_) -> Any:
+    """Replace any value with a constant. Useful for redaction."""
+    return new_value
+
+
 def _parse_json(value: Any, path: str = "", **_) -> Any:
     """Parse JSON string and optionally extract a value by path."""
     if not isinstance(value, str):
@@ -222,6 +227,7 @@ TRANSFORMS = {
     "mask_email": _mask_email,
     "mask_ip": _mask_ip,
     "default": _default,
+    "set_value": _set_value,
     "parse_json": _parse_json,
     "parse_kv": _parse_kv,
 }

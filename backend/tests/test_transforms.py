@@ -161,6 +161,29 @@ class TestConditionalTransforms:
         result = apply_transform("", "default", default_value="unknown")
         assert result == "unknown"
 
+    def test_set_value_replaces_any_value(self):
+        """set_value should replace any value with constant."""
+        result = apply_transform("secret123", "set_value", new_value="[REDACTED]")
+        assert result == "[REDACTED]"
+
+    def test_set_value_replaces_empty_string(self):
+        """set_value should replace even empty strings."""
+        result = apply_transform("", "set_value", new_value="[REDACTED]")
+        assert result == "[REDACTED]"
+
+    def test_set_value_replaces_none(self):
+        """set_value should replace None values."""
+        result = apply_transform(None, "set_value", new_value="N/A")
+        assert result == "N/A"
+
+    def test_set_value_for_redaction(self):
+        """set_value can be used for field redaction."""
+        record = {"password": "secret123", "username": "admin"}
+        result_password = apply_transforms(record["password"], [{"name": "set_value", "new_value": "[REDACTED]"}])
+        assert result_password == "[REDACTED]"
+        # Original username unchanged
+        assert record["username"] == "admin"
+
 
 class TestParsingTransforms:
     def test_parse_json(self):

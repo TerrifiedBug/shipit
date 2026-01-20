@@ -134,6 +134,7 @@ def create_user(request: CreateUserRequest, http_request: Request = None, admin:
         target_user_id=user["id"],
         target_email=request.email,
         is_admin=(role == "admin"),
+        role=role,
         ip_address=get_client_ip(http_request) if http_request else None,
     )
 

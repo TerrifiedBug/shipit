@@ -40,16 +40,20 @@ def log_user_created(
     target_user_id: str,
     target_email: str,
     is_admin: bool,
+    role: str | None = None,
     ip_address: str | None = None,
 ) -> None:
     """Log user creation."""
+    details = {"email": target_email, "is_admin": is_admin}
+    if role:
+        details["role"] = role
     db.create_audit_log(
         event_type=db.AUDIT_EVENT_USER_CREATED,
         actor_id=actor_id,
         actor_name=actor_name,
         target_type="user",
         target_id=target_user_id,
-        details={"email": target_email, "is_admin": is_admin},
+        details=details,
         ip_address=ip_address,
     )
 
